@@ -5,28 +5,13 @@
 //  Created by Chris Jenkins on 15/02/2026.
 //
 
-
 import Foundation
 
+/// Defines an asynchronous HTML loading strategy for a URL.
 public protocol URLLoading: Sendable {
-    func fetch(url: URL) async throws -> (data: Data, response: HTTPURLResponse)
-}
-
-public struct DefaultURLLoader: URLLoading {
-    private let session: URLSession
-
-    public init(session: URLSession = .shared) {
-        self.session = session
-    }
-
-    public func fetch(url: URL) async throws -> (data: Data, response: HTTPURLResponse) {
-        var request = URLRequest(url: url)
-        request.setValue("ReadabilityKit/1.0 (+https://example.invalid)", forHTTPHeaderField: "User-Agent")
-        request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
-
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw ReadableError.invalidResponse }
-        guard (200..<300).contains(http.statusCode) else { throw ReadableError.httpStatus(http.statusCode) }
-        return (data, http)
-    }
+    /// Loads HTML for the given URL so it can be parsed by `ReadabilityExtractor`.
+    /// - Parameter url: The page URL to load.
+    /// - Returns: The HTML string that should be parsed for readability extraction.
+    /// - Throws: A `ReadableError` or transport/runtime error when loading fails.
+    func fetchHTML(url: URL) async throws -> String
 }

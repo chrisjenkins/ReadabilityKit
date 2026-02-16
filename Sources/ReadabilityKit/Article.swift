@@ -5,9 +5,9 @@
 //  Created by Chris Jenkins on 15/02/2026.
 //
 
-
 import Foundation
 
+/// Represents the extracted readable article content and metadata for a source URL.
 public struct Article: Sendable {
     public let url: URL
     public let title: String
@@ -16,6 +16,14 @@ public struct Article: Sendable {
     public let contentHTML: String
     public let textContent: String
 
+    /// Creates an extracted article value from parsed readability output.
+    /// - Parameters:
+    ///   - url: Source URL the content came from.
+    ///   - title: Resolved article title from metadata/headings.
+    ///   - byline: Optional author/byline text.
+    ///   - excerpt: Optional summary/description.
+    ///   - contentHTML: Cleaned article HTML body.
+    ///   - textContent: Plain-text representation of `contentHTML`.
     public init(
         url: URL,
         title: String,

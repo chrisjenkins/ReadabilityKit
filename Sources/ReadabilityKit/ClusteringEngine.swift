@@ -1,31 +1,22 @@
 //
-//  Clustering.swift
+//  ClusteringEngine.swift
 //  ReadabilityKit
 //
-//  Created by Chris Jenkins on 15/02/2026.
+//  Created by Chris Jenkins on 16/02/2026.
 //
-
 
 import Foundation
 import SwiftSoup
 
-enum Clustering {
-
-    struct Candidate {
-        let path: String
-        let orderIndex: Int
-        let depth: Int
-        let score: Double
-        let tokens: Set<String>
-        let element: Element
-    }
-
-    static func mergeBestCluster(
-        candidates: [Candidate],
+/// Groups and merges high-scoring candidate nodes into a single article root.
+struct ClusteringEngine {
+    func mergeBestCluster(
+        candidates: [ClusteringCandidate],
         baseUri: String,
         options: ExtractionOptions
     ) throws -> Element {
-        let top = candidates
+        let top =
+            candidates
             .sorted { $0.score > $1.score }
             .prefix(max(1, options.clusterTopN))
         let topArr = Array(top)
@@ -40,7 +31,7 @@ enum Clustering {
 
         let inDocOrder = topArr.sorted { $0.orderIndex < $1.orderIndex }
 
-        func compatible(_ a: Candidate, _ b: Candidate) -> Bool {
+        func compatible(_ a: ClusteringCandidate, _ b: ClusteringCandidate) -> Bool {
             let rankGap = abs(a.orderIndex - b.orderIndex)
             if rankGap > options.clusterMaxRankGap { return false }
 
@@ -55,8 +46,8 @@ enum Clustering {
             return true
         }
 
-        var clusters: [[Candidate]] = []
-        var current: [Candidate] = [inDocOrder[0]]
+        var clusters: [[ClusteringCandidate]] = []
+        var current: [ClusteringCandidate] = [inDocOrder[0]]
 
         for i in 1..<inDocOrder.count {
             let next = inDocOrder[i]
@@ -70,7 +61,7 @@ enum Clustering {
         }
         clusters.append(current)
 
-        func clusterValue(_ c: [Candidate]) -> Double {
+        func clusterValue(_ c: [ClusteringCandidate]) -> Double {
             let sum = c.reduce(0.0) { $0 + $1.score }
             let bonus = log(Double(c.count) + 1.0) * 0.25
             return sum + bonus
@@ -93,22 +84,23 @@ enum Clustering {
         return wrapper
     }
 
-    static func tokenizeClassAndId(_ el: Element) throws -> Set<String> {
-        let id = el.id().lowercased()
-        let cls = try el.className().lowercased()
+    func tokenizeClassAndId(_ element: Element) throws -> Set<String> {
+        let id = element.id().lowercased()
+        let cls = try element.className().lowercased()
         let raw = (id + " " + cls)
 
-        // Hard negatives: stop comments/disqus from clustering in
+        // Hard negatives: stop comments/disqus from clustering in.
         if raw.contains("comment") || raw.contains("disqus") || raw.contains("reply") { return [] }
 
-        let parts = raw
+        let parts =
+            raw
             .split(whereSeparator: { !$0.isLetter && !$0.isNumber && $0 != "-" && $0 != "_" })
             .map { String($0) }
 
         return Set(parts.filter { $0.count >= 3 && $0 != "nav" && $0 != "footer" && $0 != "header" })
     }
 
-    private static func jaccard(_ a: Set<String>, _ b: Set<String>) -> Double {
+    private func jaccard(_ a: Set<String>, _ b: Set<String>) -> Double {
         if a.isEmpty && b.isEmpty { return 1.0 }
         if a.isEmpty || b.isEmpty { return 0.0 }
         let inter = a.intersection(b).count

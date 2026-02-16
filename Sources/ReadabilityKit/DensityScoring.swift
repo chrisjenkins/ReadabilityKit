@@ -9,14 +9,16 @@
 import Foundation
 import SwiftSoup
 
+/// Computes content-density based scores that favor text-rich, low-link DOM regions.
 enum DensityScoring {
+    private static let linkDensityScorer = LinkDensityScorer()
 
     static func score(element: Element) throws -> Double {
         let textLen = try visibleTextLength(of: element)
         if textLen < 80 { return 0 }
 
         let depth = domDepth(of: element)
-        let linkPenalty = try 1.0 + Scoring.linkDensity(element) * 2.5
+        let linkPenalty = try 1.0 + linkDensityScorer.score(element) * 2.5
         let tagPenalty = structuralTagPenalty(element)
 
         return Double(textLen) / (Double(depth) * linkPenalty * tagPenalty)

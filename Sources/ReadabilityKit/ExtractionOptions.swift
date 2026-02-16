@@ -5,9 +5,9 @@
 //  Created by Chris Jenkins on 15/02/2026.
 //
 
-
 import Foundation
 
+/// Configures extraction heuristics and content-preservation behavior.
 public struct ExtractionOptions: Sendable {
     public var preserveHTML: Bool
     public var keepIframes: Bool
@@ -21,6 +21,18 @@ public struct ExtractionOptions: Sendable {
     public var clusterMaxDepthDelta: Int
     public var clusterMinTokenJaccard: Double
 
+    /// Creates extraction options that tune parsing, cleaning, and cluster selection.
+    /// - Parameters:
+    ///   - preserveHTML: Keeps HTML output fidelity when true.
+    ///   - keepIframes: Preserves iframe elements during cleanup.
+    ///   - keepVideos: Preserves video/source elements during cleanup.
+    ///   - keepAudio: Preserves audio/source elements during cleanup.
+    ///   - wrapInArticleTag: Wraps final output in `<article>` instead of `<div>` when true.
+    ///   - enableClustering: Enables multi-node clustering instead of single best-node selection.
+    ///   - clusterTopN: Maximum top-scoring nodes considered for cluster merge.
+    ///   - clusterMaxRankGap: Max document-order distance allowed when clustering nodes.
+    ///   - clusterMaxDepthDelta: Max DOM depth difference allowed when clustering nodes.
+    ///   - clusterMinTokenJaccard: Minimum class/id token overlap used for compatibility.
     public init(
         preserveHTML: Bool = true,
         keepIframes: Bool = false,

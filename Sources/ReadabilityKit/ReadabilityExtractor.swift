@@ -9,40 +9,70 @@
 import Foundation
 import SwiftSoup
 
+/// High-level API that loads HTML and extracts cleaned, readable article content.
 public struct ReadabilityExtractor: Sendable {
     private let loader: URLLoading
     private let options: ExtractionOptions
+    private let clusteringEngine = ClusteringEngine()
+    private let paragraphScorer = ParagraphScorer()
+    private let classWeightScorer = ClassWeightScorer()
+    private let linkDensityScorer = LinkDensityScorer()
+    private let removeScriptsStylesAndUnsafePass = RemoveScriptsStylesAndUnsafePass()
+    private let normalizeBreaksPass = NormalizeBreaksPass()
+    private let removeUnlikelyCandidatesPass = RemoveUnlikelyCandidatesPass()
+    private let removeFormsButtonsEtcPass = RemoveFormsButtonsEtcPass()
+    private let removeLikelyJunkBlocksPass = RemoveLikelyJunkBlocksPass()
+    private let fixLazyMediaPass = FixLazyMediaPass()
+    private let cleanTablesPass = CleanTablesPass()
+    private let stripEmptyParagraphsPass = StripEmptyParagraphsPass()
+    private let unwrapRedundantSpansAndDivsPass = UnwrapRedundantSpansAndDivsPass()
 
-    public init(loader: URLLoading = DefaultURLLoader(), options: ExtractionOptions = .init()) {
+    /// Creates an extractor with a pluggable HTML loader and parsing options.
+    /// - Parameters:
+    ///   - loader: Strategy used to load HTML for URL-based extraction.
+    ///   - options: Heuristics and cleanup options that drive parsing behavior.
+    public init(loader: URLLoading = URLSessionHTMLLoader(), options: ExtractionOptions = .init()) {
         self.loader = loader
         self.options = options
     }
 
     // MARK: - Public API
 
+    /// Loads a page URL, parses it, and returns cleaned article content.
+    ///
+    /// Parsing flow:
+    /// 1. Load HTML via the configured `URLLoading` implementation.
+    /// 2. Parse and normalize DOM.
+    /// 3. Score candidate nodes and select/cluster the best content region.
+    /// 4. Run cleanup passes and return structured article output.
+    ///
+    /// - Parameter url: The source page URL to extract.
+    /// - Returns: An `Article` containing metadata, cleaned HTML, and plain text.
+    /// - Throws: `ReadableError` when loading/parsing/content selection fails.
     public func extract(from url: URL) async throws -> Article {
-        let (data, _) = try await loader.fetch(url: url)
-
-        let html =
-            String(data: data, encoding: .utf8)
-            ?? String(data: data, encoding: .isoLatin1)
-
-        guard let html, !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw ReadableError.decodingFailed
-        }
-
+        let html = try await loader.fetchHTML(url: url)
         return try extract(fromHTML: html, url: url)
     }
 
+    /// Parses already-available HTML and extracts the most readable article region.
+    ///
+    /// This method applies normalization, candidate scoring, optional clustering, and
+    /// post-selection cleanup to produce high-fidelity article HTML and text output.
+    ///
+    /// - Parameters:
+    ///   - html: Raw HTML to parse.
+    ///   - url: Canonical URL used for base URI resolution and metadata fallback.
+    /// - Returns: An extracted `Article`.
+    /// - Throws: `ReadableError` when HTML is empty, parsing fails, or readable content is not found.
     public func extract(fromHTML html: String, url: URL) throws -> Article {
         let trimmed = html.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw ReadableError.emptyHTML }
 
         let doc = try SwiftSoup.parse(trimmed, url.absoluteString)
 
-        try Cleaning.removeScriptsStylesAndUnsafe(doc, options: options)
-        try Cleaning.normalizeBreaks(doc)
-        try Cleaning.removeUnlikelyCandidates(doc)
+        try removeScriptsStylesAndUnsafePass.apply(to: doc, options: options)
+        try normalizeBreaksPass.apply(to: doc, options: options)
+        try removeUnlikelyCandidatesPass.apply(to: doc, options: options)
 
         let (title, byline, excerpt) = try extractMetadata(doc: doc, fallbackURL: url)
         guard let body = doc.body() else { throw ReadableError.parseFailed }
@@ -51,7 +81,7 @@ public struct ReadabilityExtractor: Sendable {
 
         let contentRoot: Element
         if options.enableClustering {
-            contentRoot = try Clustering.mergeBestCluster(
+            contentRoot = try clusteringEngine.mergeBestCluster(
                 candidates: candidates,
                 baseUri: body.getBaseUri(),
                 options: options
@@ -64,12 +94,12 @@ public struct ReadabilityExtractor: Sendable {
         }
 
         // Fidelity cleaning pipeline
-        try Cleaning.removeFormsButtonsEtc(contentRoot)
-        try Cleaning.removeLikelyJunkBlocks(contentRoot)
-        try Cleaning.fixLazyMedia(contentRoot)
-        try Cleaning.cleanTables(contentRoot)
-        try Cleaning.stripEmptyParagraphs(contentRoot)
-        try Cleaning.unwrapRedundantSpansAndDivs(contentRoot)
+        try removeFormsButtonsEtcPass.apply(to: contentRoot, options: options)
+        try removeLikelyJunkBlocksPass.apply(to: contentRoot, options: options)
+        try fixLazyMediaPass.apply(to: contentRoot, options: options)
+        try cleanTablesPass.apply(to: contentRoot, options: options)
+        try stripEmptyParagraphsPass.apply(to: contentRoot, options: options)
+        try unwrapRedundantSpansAndDivsPass.apply(to: contentRoot, options: options)
 
         let contentHTML = try contentRoot.outerHtml()
         let textContent = try contentRoot.text()
@@ -123,7 +153,7 @@ public struct ReadabilityExtractor: Sendable {
 
     // MARK: - Candidate collection (Readability + Density + Propagation)
 
-    private func collectCandidates(in body: Element) throws -> [Clustering.Candidate] {
+    private func collectCandidates(in body: Element) throws -> [ClusteringCandidate] {
         var scoreByPath: [String: Double] = [:]
         var elementByPath: [String: Element] = [:]
 
@@ -157,7 +187,7 @@ public struct ReadabilityExtractor: Sendable {
         // Paragraph-based scoring + propagation to parent/grandparent
         let paragraphs = try body.select("p, pre, td, blockquote").array()
         for p in paragraphs {
-            let paragraphScore = try Scoring.scoreParagraph(p)
+            let paragraphScore = try paragraphScorer.score(p)
             guard paragraphScore > 0 else { continue }
 
             let parent = p.parent()
@@ -167,8 +197,8 @@ public struct ReadabilityExtractor: Sendable {
                 guard let node else { continue }
 
                 let nodePath = try path(for: node)
-                let classWeight = try Scoring.classWeight(node)
-                let ld = try Scoring.linkDensity(node)
+                let classWeight = try classWeightScorer.score(node)
+                let ld = try linkDensityScorer.score(node)
                 let density = try DensityScoring.score(element: node)
 
                 // Combined score: classic + density
@@ -187,22 +217,22 @@ public struct ReadabilityExtractor: Sendable {
             guard density > 0 else { continue }
 
             let nodePath = try path(for: el)
-            let classWeight = try Scoring.classWeight(el)
-            let ld = try Scoring.linkDensity(el)
+            let classWeight = try classWeightScorer.score(el)
+            let ld = try linkDensityScorer.score(el)
 
             let inc = (density * (1.0 - min(0.85, ld))) + classWeight * 0.25
             scoreByPath[nodePath, default: 0] += inc
             elementByPath[nodePath] = el
         }
 
-        var out: [Clustering.Candidate] = []
+        var out: [ClusteringCandidate] = []
         out.reserveCapacity(scoreByPath.count)
 
         for (p, s) in scoreByPath where s > 0 {
             guard let el = elementByPath[p] else { continue }
             let order = orderIndexByPath[p] ?? Int.max
             let depth = DensityScoring.domDepth(of: el)
-            let tokens = try Clustering.tokenizeClassAndId(el)
+            let tokens = try clusteringEngine.tokenizeClassAndId(el)
             out.append(.init(path: p, orderIndex: order, depth: depth, score: s, tokens: tokens, element: el))
         }
 
