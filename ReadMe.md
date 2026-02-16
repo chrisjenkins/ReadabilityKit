@@ -2,16 +2,17 @@
 
 ReadabilityKit is a Swift Package for extracting clean, readable article content from web pages or raw HTML.
 
-It is designed for Apple platforms and returns both cleaned HTML and plain text content, plus common metadata such as title, byline, and excerpt.
+It is designed for Apple platforms and returns cleaned HTML, plain text, and article metadata (`title`, `byline`, `excerpt`).
 
 ## Features
 
-- Async extraction from a URL (`extract(from:)`)
+- Async extraction from a URL via pluggable loaders (`URLSessionHTMLLoader`, `WebViewDOMLoader`)
 - Direct extraction from raw HTML (`extract(fromHTML:url:)`)
-- Content scoring and clustering to pick main article body
-- Metadata extraction (`title`, `byline`, `excerpt`)
+- Multi-stage parsing pipeline (normalization, scoring, clustering, cleanup)
+- Content scoring with dedicated scorer types
+- Cluster-based main-content selection
 - Output as both `contentHTML` and `textContent`
-- Configurable extraction and media-preservation options
+- Configurable extraction and media-preservation options (`ExtractionOptions`)
 
 ## Requirements
 
@@ -62,6 +63,29 @@ Task {
 }
 ```
 
+## Loader Strategies
+
+By default, `ReadabilityExtractor` uses `URLSessionHTMLLoader`.
+
+```swift
+import ReadabilityKit
+
+let extractor = ReadabilityExtractor(
+    loader: URLSessionHTMLLoader()
+)
+```
+
+If you want rendered DOM (after page load), use `WebViewDOMLoader`:
+
+```swift
+import ReadabilityKit
+
+@MainActor
+func makeExtractor() -> ReadabilityExtractor {
+    ReadabilityExtractor(loader: WebViewDOMLoader())
+}
+```
+
 ## Extract From Raw HTML
 
 ```swift
@@ -84,6 +108,18 @@ let article = try extractor.extract(
 print(article.title)
 print(article.contentHTML)
 ```
+
+## Parsing Pipeline
+
+`ReadabilityExtractor` follows this flow:
+
+1. Load HTML using the configured `URLLoading` implementation.
+2. Parse DOM with SwiftSoup.
+3. Run document cleaning passes (unsafe tags, break normalization, unlikely candidate removal).
+4. Score candidates using paragraph/class/link-density + density scoring.
+5. Select content via clustering (or best single node if clustering is disabled).
+6. Run element cleaning passes (junk blocks, lazy media, table cleanup, etc.).
+7. Build the final `Article`.
 
 ## Output Model
 
@@ -128,7 +164,7 @@ let extractor = ReadabilityExtractor(options: options)
 
 ## Errors
 
-ReadabilityKit throws `ReadableError` for common failures:
+ReadabilityKit throws `ReadabilityError` for common failures:
 
 - `invalidResponse`
 - `httpStatus(Int)`
@@ -136,6 +172,33 @@ ReadabilityKit throws `ReadableError` for common failures:
 - `emptyHTML`
 - `parseFailed`
 - `noReadableContent`
+
+## Package Structure
+
+Current source layout under `Sources/ReadabilityKit`:
+
+- `Models/`
+  - `Article`
+  - `ExtractionOptions`
+  - `ReadabilityError`
+- `Loading/`
+  - `URLLoading`
+  - `URLSessionHTMLLoader`
+  - `WebViewDOMLoader`
+- `Extraction/`
+  - `ReadabilityExtractor`
+- `Scoring/`
+  - `ElementScorer`
+  - `ClassWeightScorer`
+  - `LinkDensityScorer`
+  - `ParagraphScorer`
+  - `DensityScoring`
+- `Clustering/`
+  - `ClusteringCandidate`
+  - `ClusteringEngine`
+- `Cleaning/`
+  - `CleaningPass`, `DocumentCleaningPass`, `ElementCleaningPass`
+  - Document and element cleaning pass implementations
 
 ## Development
 
