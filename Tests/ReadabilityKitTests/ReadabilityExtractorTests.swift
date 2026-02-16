@@ -241,4 +241,80 @@ struct ReadabilityExtractorTests {
         #expect(article.contentHTML.contains("Segment Revenue (USDm)"))
     }
 
+    @Test("Extracts lead image from metadata when valid")
+    func extractFromHTML_leadImageFromMetadata() throws {
+        let html = """
+            <html>
+              <head>
+                <title>Photo Essay</title>
+                <meta property="og:image" content="https://cdn.example.com/hero.jpg">
+                <meta property="og:image:width" content="1200">
+                <meta property="og:image:height" content="630">
+              </head>
+              <body>
+                <article>
+                  <p>This article includes a hero image in metadata, and it should be selected even without content images.</p>
+                  <p>The body has enough text to pass the readability threshold for extraction.</p>
+                </article>
+              </body>
+            </html>
+            """
+
+        let extractor = ReadabilityExtractor()
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://example.com/essay")!)
+
+        #expect(article.leadImageURL?.absoluteString == "https://cdn.example.com/hero.jpg")
+    }
+
+    @Test("Rejects small metadata image and falls back to content hero")
+    func extractFromHTML_leadImageFallsBackToContent() throws {
+        let html = """
+            <html>
+              <head>
+                <title>Feature</title>
+                <meta property="og:image" content="https://cdn.example.com/icon.png">
+                <meta property="og:image:width" content="80">
+                <meta property="og:image:height" content="80">
+              </head>
+              <body>
+                <article>
+                  <h1>Feature Story</h1>
+                  <p>Longform content begins here with enough descriptive text to pass readability heuristics.</p>
+                  <p>Additional narrative text ensures the extraction pipeline accepts the article body.</p>
+                  <img class="hero" src="/images/lead.jpg" width="1400" height="700" alt="Hero image">
+                </article>
+              </body>
+            </html>
+            """
+
+        let extractor = ReadabilityExtractor()
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://example.com/feature")!)
+
+        #expect(article.leadImageURL?.absoluteString == "https://example.com/images/lead.jpg")
+    }
+
+    @Test("Filters logo-style images before selecting lead image")
+    func extractFromHTML_leadImageFiltersLogo() throws {
+        let html = """
+            <html>
+              <head><title>Gallery</title></head>
+              <body>
+                <article>
+                  <img class="site-logo" src="https://cdn.example.com/logo.png" width="300" height="300">
+                  <figure>
+                    <img src="https://cdn.example.com/gallery/hero.jpg" width="1600" height="900" alt="Gallery hero">
+                  </figure>
+                  <p>Gallery text content with sufficient length to be scored as article.</p>
+                  <p>More content to ensure the article is valid and non-empty.</p>
+                </article>
+              </body>
+            </html>
+            """
+
+        let extractor = ReadabilityExtractor()
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://example.com/gallery")!)
+
+        #expect(article.leadImageURL?.absoluteString == "https://cdn.example.com/gallery/hero.jpg")
+    }
+
 }

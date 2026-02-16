@@ -15,6 +15,7 @@ public struct Article: Sendable {
     public let excerpt: String?
     public let contentHTML: String
     public let textContent: String
+    public let leadImageURL: URL?
 
     /// Creates an extracted article value from parsed readability output.
     /// - Parameters:
@@ -24,13 +25,15 @@ public struct Article: Sendable {
     ///   - excerpt: Optional summary/description.
     ///   - contentHTML: Cleaned article HTML body.
     ///   - textContent: Plain-text representation of `contentHTML`.
+    ///   - leadImageURL: Lead image URL resolved from metadata or content heuristics.
     public init(
         url: URL,
         title: String,
         byline: String?,
         excerpt: String?,
         contentHTML: String,
-        textContent: String
+        textContent: String,
+        leadImageURL: URL?
     ) {
         self.url = url
         self.title = title
@@ -38,5 +41,6 @@ public struct Article: Sendable {
         self.excerpt = excerpt
         self.contentHTML = contentHTML
         self.textContent = textContent
+        self.leadImageURL = leadImageURL
     }
 }

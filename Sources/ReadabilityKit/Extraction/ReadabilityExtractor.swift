@@ -26,6 +26,7 @@ public struct ReadabilityExtractor: Sendable {
     private let cleanTablesPass = CleanTablesPass()
     private let stripEmptyParagraphsPass = StripEmptyParagraphsPass()
     private let unwrapRedundantSpansAndDivsPass = UnwrapRedundantSpansAndDivsPass()
+    private let leadImageExtractor = LeadImageExtractor()
 
     /// Creates an extractor with a pluggable HTML loader and parsing options.
     /// - Parameters:
@@ -101,6 +102,11 @@ public struct ReadabilityExtractor: Sendable {
         try stripEmptyParagraphsPass.apply(to: contentRoot, options: options)
         try unwrapRedundantSpansAndDivsPass.apply(to: contentRoot, options: options)
 
+        let leadImageURL = try leadImageExtractor.extractLeadImageURL(
+            doc: doc,
+            contentRoot: contentRoot,
+            fallbackURL: url
+        )
         let contentHTML = try contentRoot.outerHtml()
         let textContent = try contentRoot.text()
 
@@ -114,7 +120,8 @@ public struct ReadabilityExtractor: Sendable {
             byline: byline,
             excerpt: (excerpt?.isEmpty == false ? excerpt : makeExcerpt(from: textContent)),
             contentHTML: contentHTML,
-            textContent: textContent
+            textContent: textContent,
+            leadImageURL: leadImageURL
         )
     }
 
@@ -254,4 +261,5 @@ public struct ReadabilityExtractor: Sendable {
         let idx = cleaned.index(cleaned.startIndex, offsetBy: 240)
         return String(cleaned[..<idx]) + "…"
     }
+
 }
