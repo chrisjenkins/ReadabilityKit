@@ -7,10 +7,12 @@
 
 
 import Foundation
+import OSLog
 import SwiftSoup
 
 /// High-level API that loads HTML and extracts cleaned, readable article content.
 public struct ReadabilityExtractor: Sendable {
+    private let logger = Logger(subsystem: "ReadabilityKit", category: "ReadabilityExtractor")
     private let loader: URLLoading
     private let options: ExtractionOptions
     private let clusteringEngine = ClusteringEngine()
@@ -107,8 +109,12 @@ public struct ReadabilityExtractor: Sendable {
             contentRoot: contentRoot,
             fallbackURL: url
         )
+        logger.debug("Extracting final HTML for \(url.absoluteString, privacy: .public)")
         let contentHTML = try contentRoot.outerHtml()
         let textContent = try contentRoot.text()
+        logger.debug(
+            "Extracted final HTML for \(url.absoluteString, privacy: .public): \(contentHTML, privacy: .public)"
+        )
 
         guard textContent.trimmingCharacters(in: .whitespacesAndNewlines).count >= 80 else {
             throw ReadabilityError.noReadableContent
