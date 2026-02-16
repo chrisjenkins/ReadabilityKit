@@ -12,6 +12,11 @@ import SwiftSoup
 struct FixLazyMediaPass: ElementCleaningPass {
     func apply(to target: Element, options _: ExtractionOptions) throws {
         for img in try target.select("img").array() {
+            let classNames = (try? img.className()) ?? ""
+            if containsHiddenClass(classNames) {
+                try img.remove()
+                continue
+            }
             let candidates = ["data-src", "data-original", "data-lazy-src", "data-url", "data-img"]
             if (try img.attr("src")).isEmpty {
                 for attr in candidates {
@@ -38,5 +43,10 @@ struct FixLazyMediaPass: ElementCleaningPass {
                 if !p.isEmpty { try v.attr("poster", p) }
             }
         }
+    }
+
+    private func containsHiddenClass(_ classes: String) -> Bool {
+        let lower = classes.lowercased()
+        return lower.contains("hide") || lower.contains("hidden")
     }
 }

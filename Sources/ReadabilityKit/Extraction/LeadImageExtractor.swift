@@ -18,7 +18,7 @@ struct LeadImageExtractor {
     }
 
     private func extractLeadImageFromMetadata(doc: Document, fallbackURL: URL) throws -> URL? {
-        let baseURL = URL(string: doc.baseUri()) ?? fallbackURL
+        let baseURL = URL(string: doc.getBaseUri()) ?? fallbackURL
         let candidates = try metaImageCandidates(doc: doc)
         for candidate in candidates {
             guard let resolved = resolveImageURL(candidate.url, baseURL: baseURL) else { continue }
@@ -101,7 +101,8 @@ struct LeadImageExtractor {
         if isBlockedImageURL(resolved.absoluteString) { return nil }
 
         let classes = (try? img.className()) ?? ""
-        let elementId = (try? img.id()) ?? ""
+        if containsHiddenClass(classes) { return nil }
+        let elementId = img.id()
         let altText = (try? img.attr("alt")) ?? ""
         let haystack = [classes, elementId, altText, resolved.absoluteString].joined(separator: " ").lowercased()
         if containsBlockedKeywords(haystack) { return nil }
@@ -248,6 +249,11 @@ struct LeadImageExtractor {
         ]
 
         return positive.contains(where: { text.contains($0) })
+    }
+
+    private func containsHiddenClass(_ classes: String) -> Bool {
+        let lower = classes.lowercased()
+        return lower.contains("hide") || lower.contains("hidden")
     }
 
     private func isInsideFigure(img: Element) -> Bool {

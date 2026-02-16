@@ -317,4 +317,28 @@ struct ReadabilityExtractorTests {
         #expect(article.leadImageURL?.absoluteString == "https://cdn.example.com/gallery/hero.jpg")
     }
 
+    @Test("Removes images with hide/hidden classes from extracted content")
+    func extractFromHTML_removesHiddenClassImages() throws {
+        let html = """
+            <html>
+              <head><title>Hidden Images</title></head>
+              <body>
+                <article>
+                  <h1>Hidden Assets</h1>
+                  <p>Content paragraph with enough text to satisfy readability requirements.</p>
+                  <p>Another paragraph adds length and context to make the article valid.</p>
+                  <img class="promo hide-banner" src="https://cdn.example.com/hidden.jpg" width="1200" height="700">
+                  <img class="visible-hero" src="https://cdn.example.com/visible.jpg" width="1200" height="700">
+                </article>
+              </body>
+            </html>
+            """
+
+        let extractor = ReadabilityExtractor()
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://example.com/hidden")!)
+
+        #expect(!article.contentHTML.contains("hidden.jpg"))
+        #expect(article.contentHTML.contains("visible.jpg"))
+    }
+
 }
