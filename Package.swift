@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "ReadableSwift",
+    name: "ReadabilityKit",
     platforms: [
         .iOS(.v15),
         .macOS(.v12),
@@ -10,21 +10,21 @@ let package = Package(
         .watchOS(.v8),
     ],
     products: [
-        .library(name: "ReadableSwift", targets: ["ReadableSwift"])
+        .library(name: "ReadabilityKit", targets: ["ReadabilityKit"])
     ],
     dependencies: [
         .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.6.0")
     ],
     targets: [
         .target(
-            name: "ReadableSwift",
+            name: "ReadabilityKit",
             dependencies: [
                 .product(name: "SwiftSoup", package: "SwiftSoup")
             ]
         ),
         .testTarget(
-            name: "ReadableSwiftTests",
-            dependencies: ["ReadableSwift"]
+            name: "ReadabilityKitTests",
+            dependencies: ["ReadabilityKit"]
         ),
     ]
 )

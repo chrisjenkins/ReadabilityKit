@@ -1,6 +1,6 @@
 //
 //  Cleaning.swift
-//  ReadableSwift
+//  ReadabilityKit
 //
 //  Created by Chris Jenkins on 15/02/2026.
 //

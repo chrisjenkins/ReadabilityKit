@@ -1,6 +1,6 @@
 //
 //  URLLoading.swift
-//  ReadableSwift
+//  ReadabilityKit
 //
 //  Created by Chris Jenkins on 15/02/2026.
 //
@@ -21,7 +21,7 @@ public struct DefaultURLLoader: URLLoading {
 
     public func fetch(url: URL) async throws -> (data: Data, response: HTTPURLResponse) {
         var request = URLRequest(url: url)
-        request.setValue("ReadableSwift/1.0 (+https://example.invalid)", forHTTPHeaderField: "User-Agent")
+        request.setValue("ReadabilityKit/1.0 (+https://example.invalid)", forHTTPHeaderField: "User-Agent")
         request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
 
         let (data, response) = try await session.data(for: request)

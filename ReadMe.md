@@ -1,6 +1,6 @@
-# ReadableSwift
+# ReadabilityKit
 
-ReadableSwift is a Swift Package for extracting clean, readable article content from web pages or raw HTML.
+ReadabilityKit is a Swift Package for extracting clean, readable article content from web pages or raw HTML.
 
 It is designed for Apple platforms and returns both cleaned HTML and plain text content, plus common metadata such as title, byline, and excerpt.
 
@@ -23,11 +23,11 @@ It is designed for Apple platforms and returns both cleaned HTML and plain text 
 
 ## Installation
 
-Add ReadableSwift to your `Package.swift` dependencies:
+Add ReadabilityKit to your `Package.swift` dependencies:
 
 ```swift
 .dependencies: [
-    .package(url: "https://github.com/<your-org-or-user>/ReadableSwift.git", branch: "main")
+    .package(url: "https://github.com/<your-org-or-user>/ReadabilityKit.git", branch: "main")
 ]
 ```
 
@@ -37,7 +37,7 @@ Then add the product to your target:
 .target(
     name: "YourTarget",
     dependencies: [
-        .product(name: "ReadableSwift", package: "ReadableSwift")
+        .product(name: "ReadabilityKit", package: "ReadabilityKit")
     ]
 )
 ```
@@ -46,7 +46,7 @@ Then add the product to your target:
 
 ```swift
 import Foundation
-import ReadableSwift
+import ReadabilityKit
 
 let extractor = ReadabilityExtractor()
 let url = URL(string: "https://example.com/article")!
@@ -66,7 +66,7 @@ Task {
 
 ```swift
 import Foundation
-import ReadableSwift
+import ReadabilityKit
 
 let html = """
 <html>
@@ -128,7 +128,7 @@ let extractor = ReadabilityExtractor(options: options)
 
 ## Errors
 
-ReadableSwift throws `ReadableError` for common failures:
+ReadabilityKit throws `ReadableError` for common failures:
 
 - `invalidResponse`
 - `httpStatus(Int)`
