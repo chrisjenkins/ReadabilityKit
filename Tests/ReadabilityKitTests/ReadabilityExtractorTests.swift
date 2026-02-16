@@ -341,4 +341,33 @@ struct ReadabilityExtractorTests {
         #expect(article.contentHTML.contains("visible.jpg"))
     }
 
+    @Test("Strips empty paragraphs from extracted HTML")
+    func extractFromHTML_stripsEmptyParagraphs() throws {
+        let html = """
+            <html>
+              <head><title>Empty Paragraphs</title></head>
+              <body>
+                <article>
+                  <h1>Empty Paragraph Cleanup</h1>
+                  <p>First content paragraph has enough descriptive text to contribute meaningfully to extraction output.</p>
+                  <p>   </p>
+                  <p></p>
+                  <p>
+                  </p>
+                  <p>Second content paragraph adds more detail so readability thresholds are clearly satisfied.</p>
+                </article>
+              </body>
+            </html>
+            """
+
+        let extractor = ReadabilityExtractor()
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://example.com/empty-p")!)
+
+        let paragraphTagCount = article.contentHTML.components(separatedBy: "<p").count - 1
+        #expect(paragraphTagCount == 2)
+        #expect(article.contentHTML.contains("First content paragraph"))
+        #expect(article.contentHTML.contains("Second content paragraph"))
+        #expect(!article.contentHTML.contains("<p></p>"))
+    }
+
 }
