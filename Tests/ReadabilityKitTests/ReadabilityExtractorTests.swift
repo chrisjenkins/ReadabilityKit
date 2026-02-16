@@ -474,4 +474,40 @@ struct ReadabilityExtractorTests {
         #expect(article.contentHTML.contains("Forest trail in late afternoon."))
     }
 
+    @Test("Preserves standard text formatting tags in extracted HTML")
+    func extractFromHTML_preservesStandardTextFormattingTags() throws {
+        let html = """
+            <html>
+              <head><title>Formatting Preservation</title></head>
+              <body>
+                <article>
+                  <h1>Primary Heading</h1>
+                  <p>This opening paragraph contains enough detail to ensure readability extraction succeeds consistently across the full content block.</p>
+
+                  <h2>Section Heading</h2>
+                  <p>We use <strong>strong emphasis</strong>, <em>stress emphasis</em>, <b>bold text</b>, and <i>italic text</i> to validate inline formatting retention.</p>
+
+                  <h3>Subsection Heading</h3>
+                  <p>Additional narrative length helps maintain score thresholds while preserving semantic heading hierarchy and typographic intent.</p>
+
+                  <h4>Detail Heading</h4>
+                  <p>Final paragraph confirms formatting tags remain in the extracted HTML output rather than being flattened into plain text only.</p>
+                </article>
+              </body>
+            </html>
+            """
+
+        let extractor = ReadabilityExtractor()
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://example.com/formatting")!)
+
+        #expect(article.contentHTML.contains("<h1"))
+        #expect(article.contentHTML.contains("<h2"))
+        #expect(article.contentHTML.contains("<h3"))
+        #expect(article.contentHTML.contains("<h4"))
+        #expect(article.contentHTML.contains("<strong>strong emphasis</strong>"))
+        #expect(article.contentHTML.contains("<em>stress emphasis</em>"))
+        #expect(article.contentHTML.contains("<b>bold text</b>"))
+        #expect(article.contentHTML.contains("<i>italic text</i>"))
+    }
+
 }
