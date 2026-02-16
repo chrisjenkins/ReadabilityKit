@@ -18,8 +18,8 @@ public struct WebViewDOMLoader: URLLoading {
     /// Loads the URL in `WKWebView` and returns the rendered DOM (`document.documentElement.outerHTML`).
     /// - Parameter url: The page URL to load.
     /// - Returns: The post-load DOM HTML string captured from JavaScript.
-    /// - Throws: A navigation error, `ReadableError.httpStatus(_:)`,
-    ///   `ReadableError.decodingFailed`, or `ReadableError.emptyHTML`.
+    /// - Throws: A navigation error, `ReadabilityError.httpStatus(_:)`,
+    ///   `ReadabilityError.decodingFailed`, or `ReadabilityError.emptyHTML`.
     public func fetchHTML(url: URL) async throws -> String {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .nonPersistent()
@@ -30,10 +30,10 @@ public struct WebViewDOMLoader: URLLoading {
         try await delegate.awaitLoad(in: webView, url: url)
 
         let result = try await webView.evaluateJavaScript("document.documentElement.outerHTML")
-        guard let html = result as? String else { throw ReadableError.decodingFailed }
+        guard let html = result as? String else { throw ReadabilityError.decodingFailed }
 
         let trimmed = html.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { throw ReadableError.emptyHTML }
+        guard !trimmed.isEmpty else { throw ReadabilityError.emptyHTML }
         return html
     }
 }
@@ -84,7 +84,7 @@ private final class NavigationDelegate: NSObject, WKNavigationDelegate {
             !(200..<300).contains(http.statusCode)
         {
             decisionHandler(.cancel)
-            finish(with: .failure(ReadableError.httpStatus(http.statusCode)))
+            finish(with: .failure(ReadabilityError.httpStatus(http.statusCode)))
             return
         }
 

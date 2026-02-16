@@ -48,7 +48,7 @@ public struct ReadabilityExtractor: Sendable {
     ///
     /// - Parameter url: The source page URL to extract.
     /// - Returns: An `Article` containing metadata, cleaned HTML, and plain text.
-    /// - Throws: `ReadableError` when loading/parsing/content selection fails.
+    /// - Throws: `ReadabilityError` when loading/parsing/content selection fails.
     public func extract(from url: URL) async throws -> Article {
         let html = try await loader.fetchHTML(url: url)
         return try extract(fromHTML: html, url: url)
@@ -63,10 +63,10 @@ public struct ReadabilityExtractor: Sendable {
     ///   - html: Raw HTML to parse.
     ///   - url: Canonical URL used for base URI resolution and metadata fallback.
     /// - Returns: An extracted `Article`.
-    /// - Throws: `ReadableError` when HTML is empty, parsing fails, or readable content is not found.
+    /// - Throws: `ReadabilityError` when HTML is empty, parsing fails, or readable content is not found.
     public func extract(fromHTML html: String, url: URL) throws -> Article {
         let trimmed = html.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { throw ReadableError.emptyHTML }
+        guard !trimmed.isEmpty else { throw ReadabilityError.emptyHTML }
 
         let doc = try SwiftSoup.parse(trimmed, url.absoluteString)
 
@@ -75,7 +75,7 @@ public struct ReadabilityExtractor: Sendable {
         try removeUnlikelyCandidatesPass.apply(to: doc, options: options)
 
         let (title, byline, excerpt) = try extractMetadata(doc: doc, fallbackURL: url)
-        guard let body = doc.body() else { throw ReadableError.parseFailed }
+        guard let body = doc.body() else { throw ReadabilityError.parseFailed }
 
         let candidates = try collectCandidates(in: body)
 
@@ -88,7 +88,7 @@ public struct ReadabilityExtractor: Sendable {
             )
         } else {
             guard let best = candidates.max(by: { $0.score < $1.score })?.element else {
-                throw ReadableError.noReadableContent
+                throw ReadabilityError.noReadableContent
             }
             contentRoot = try wrapSingle(best, baseUri: body.getBaseUri())
         }
@@ -105,7 +105,7 @@ public struct ReadabilityExtractor: Sendable {
         let textContent = try contentRoot.text()
 
         guard textContent.trimmingCharacters(in: .whitespacesAndNewlines).count >= 80 else {
-            throw ReadableError.noReadableContent
+            throw ReadabilityError.noReadableContent
         }
 
         return Article(

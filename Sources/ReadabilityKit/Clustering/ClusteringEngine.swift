@@ -68,7 +68,7 @@ struct ClusteringEngine {
         }
 
         guard let bestCluster = clusters.max(by: { clusterValue($0) < clusterValue($1) }) else {
-            throw ReadableError.noReadableContent
+            throw ReadabilityError.noReadableContent
         }
 
         let bestSorted = bestCluster.sorted { $0.orderIndex < $1.orderIndex }
