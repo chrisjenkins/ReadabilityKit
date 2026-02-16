@@ -10,7 +10,6 @@ import Foundation
 import WebKit
 
 /// Loads rendered DOM HTML by navigating a `WKWebView` and evaluating JavaScript.
-@MainActor
 public struct WebViewDOMLoader: URLLoading {
     /// Creates a web-view-backed HTML loader.
     public init() {}
@@ -20,6 +19,7 @@ public struct WebViewDOMLoader: URLLoading {
     /// - Returns: The post-load DOM HTML string captured from JavaScript.
     /// - Throws: A navigation error, `ReadabilityError.httpStatus(_:)`,
     ///   `ReadabilityError.decodingFailed`, or `ReadabilityError.emptyHTML`.
+    @MainActor
     public func fetchHTML(url: URL) async throws -> String {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .nonPersistent()
