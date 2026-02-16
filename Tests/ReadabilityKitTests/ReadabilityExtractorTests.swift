@@ -370,4 +370,108 @@ struct ReadabilityExtractorTests {
         #expect(!article.contentHTML.contains("<p></p>"))
     }
 
+    @Test("Preserves ordered and unordered lists in extracted HTML")
+    func extractFromHTML_preservesOrderedAndUnorderedLists() throws {
+        let html = """
+            <html>
+              <head><title>List Preservation</title></head>
+              <body>
+                <article>
+                  <h1>Checklist for Release Day</h1>
+                  <p>This guide explains a practical sequence for preparing deployment, validating outcomes, and communicating status to stakeholders.</p>
+                  <ol>
+                    <li>Freeze merges for the release branch.</li>
+                    <li>Run the verification test suite.</li>
+                    <li>Tag the release candidate.</li>
+                  </ol>
+                  <p>After the ordered rollout steps, teams also track follow-up actions in a general checklist for maintenance and communication.</p>
+                  <ul>
+                    <li>Monitor error rates and latency.</li>
+                    <li>Post release notes in team channels.</li>
+                    <li>Schedule a short retrospective.</li>
+                  </ul>
+                </article>
+              </body>
+            </html>
+            """
+
+        let extractor = ReadabilityExtractor()
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://example.com/lists")!)
+
+        #expect(article.contentHTML.contains("<ol"))
+        #expect(article.contentHTML.contains("<ul"))
+        #expect(article.contentHTML.contains("Freeze merges for the release branch."))
+        #expect(article.contentHTML.contains("Monitor error rates and latency."))
+    }
+
+    @Test("Preserves figures and images with src attributes")
+    func extractFromHTML_preservesFiguresAndImagesWithSrc() throws {
+        let html = """
+            <html>
+              <head><title>Figure Src Preservation</title></head>
+              <body>
+                <article>
+                  <h1>Visual Story</h1>
+                  <p>This article includes photography and descriptive text so extraction keeps the full story structure and associated media references.</p>
+                  <figure class="hero-figure">
+                    <img src="https://cdn.example.com/photos/mountain-hero.jpg" alt="Mountain at sunrise" width="1400" height="933">
+                    <figcaption>Sunrise over the ridge line.</figcaption>
+                  </figure>
+                  <p>The narrative continues with additional context about weather, route planning, and safety considerations for hikers.</p>
+                </article>
+              </body>
+            </html>
+            """
+
+        let extractor = ReadabilityExtractor()
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://example.com/figure-src")!)
+
+        #expect(article.contentHTML.contains("<figure"))
+        #expect(article.contentHTML.contains("<img"))
+        #expect(article.contentHTML.contains("src=\"https://cdn.example.com/photos/mountain-hero.jpg\""))
+        #expect(article.contentHTML.contains("<figcaption"))
+        #expect(article.contentHTML.contains("Sunrise over the ridge line."))
+    }
+
+    @Test("Preserves figures and images with srcset attributes")
+    func extractFromHTML_preservesFiguresAndImagesWithSrcset() throws {
+        let html = """
+            <html>
+              <head><title>Figure Srcset Preservation</title></head>
+              <body>
+                <article>
+                  <h1>Responsive Images</h1>
+                  <p>Responsive imagery should remain intact in extracted content so clients can choose appropriately sized assets for different displays.</p>
+                  <figure>
+                    <img
+                      src="https://cdn.example.com/photos/river-640.jpg"
+                      srcset="https://cdn.example.com/photos/river-640.jpg 640w, https://cdn.example.com/photos/river-1280.jpg 1280w"
+                      alt="River valley"
+                    >
+                    <figcaption>River valley at midday.</figcaption>
+                  </figure>
+                  <figure>
+                    <img
+                      data-src="https://cdn.example.com/photos/forest-640.jpg"
+                      data-srcset="https://cdn.example.com/photos/forest-640.jpg 640w, https://cdn.example.com/photos/forest-1280.jpg 1280w"
+                      alt="Forest trail"
+                    >
+                    <figcaption>Forest trail in late afternoon.</figcaption>
+                  </figure>
+                  <p>Additional explanatory text ensures the readability threshold is met without relying only on captions.</p>
+                </article>
+              </body>
+            </html>
+            """
+
+        let extractor = ReadabilityExtractor()
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://example.com/figure-srcset")!)
+
+        #expect(article.contentHTML.contains("<figure"))
+        #expect(article.contentHTML.contains("srcset=\"https://cdn.example.com/photos/river-640.jpg 640w, https://cdn.example.com/photos/river-1280.jpg 1280w\""))
+        #expect(article.contentHTML.contains("src=\"https://cdn.example.com/photos/forest-640.jpg\""))
+        #expect(article.contentHTML.contains("srcset=\"https://cdn.example.com/photos/forest-640.jpg 640w, https://cdn.example.com/photos/forest-1280.jpg 1280w\""))
+        #expect(article.contentHTML.contains("Forest trail in late afternoon."))
+    }
+
 }
