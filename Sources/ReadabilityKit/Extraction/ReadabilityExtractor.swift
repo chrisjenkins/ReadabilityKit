@@ -12,6 +12,25 @@ import SwiftSoup
 
 /// High-level API that loads HTML and extracts cleaned, readable article content.
 public struct ReadabilityExtractor: Sendable {
+    private struct ExtractionAttempt {
+        let removeUnlikelyCandidates: Bool
+        let minimumTextLength: Int
+    }
+
+    private struct MetadataResult {
+        let title: String
+        let byline: String?
+        let excerpt: String?
+        let jsonLDLeadImageURL: URL?
+    }
+
+    private struct JSONLDMetadata {
+        let title: String?
+        let byline: String?
+        let excerpt: String?
+        let leadImageURL: URL?
+    }
+
     private let logger = Logger(subsystem: "ReadabilityKit", category: "ReadabilityExtractor")
     private let loader: URLLoading
     private let options: ExtractionOptions
@@ -71,16 +90,62 @@ public struct ReadabilityExtractor: Sendable {
         let trimmed = html.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw ReadabilityError.emptyHTML }
 
-        let doc = try SwiftSoup.parse(trimmed, url.absoluteString)
+        let strictAttempt = ExtractionAttempt(removeUnlikelyCandidates: true, minimumTextLength: 80)
+        let relaxedAttempt = ExtractionAttempt(removeUnlikelyCandidates: false, minimumTextLength: 40)
+
+        do {
+            let strictArticle = try performExtraction(
+                fromHTML: trimmed,
+                url: url,
+                attempt: strictAttempt
+            )
+
+            // Progressive relaxation: only retry if strict output looks thin.
+            if strictArticle.textContent.count >= 320 {
+                return strictArticle
+            }
+
+            if let relaxedArticle = try? performExtraction(
+                fromHTML: trimmed,
+                url: url,
+                attempt: relaxedAttempt
+            ) {
+                let strictQuality = articleQualityScore(strictArticle)
+                let relaxedQuality = articleQualityScore(relaxedArticle)
+                if relaxedQuality > strictQuality * 1.1 {
+                    return relaxedArticle
+                }
+            }
+
+            return strictArticle
+        } catch {
+            return try performExtraction(
+                fromHTML: trimmed,
+                url: url,
+                attempt: relaxedAttempt
+            )
+        }
+    }
+
+    private func performExtraction(
+        fromHTML html: String,
+        url: URL,
+        attempt: ExtractionAttempt
+    ) throws -> Article {
+        let doc = try SwiftSoup.parse(html, url.absoluteString)
+        let metadata = try extractMetadata(doc: doc, fallbackURL: url)
 
         try removeScriptsStylesAndUnsafePass.apply(to: doc, options: options)
         try normalizeBreaksPass.apply(to: doc, options: options)
-        try removeUnlikelyCandidatesPass.apply(to: doc, options: options)
-
-        let (title, byline, excerpt) = try extractMetadata(doc: doc, fallbackURL: url)
+        if attempt.removeUnlikelyCandidates {
+            try removeUnlikelyCandidatesPass.apply(to: doc, options: options)
+        }
         guard let body = doc.body() else { throw ReadabilityError.parseFailed }
 
         let candidates = try collectCandidates(in: body)
+        guard let topCandidate = candidates.max(by: { $0.score < $1.score }) else {
+            throw ReadabilityError.noReadableContent
+        }
 
         let contentRoot: Element
         if options.enableClustering {
@@ -90,10 +155,11 @@ public struct ReadabilityExtractor: Sendable {
                 options: options
             )
         } else {
-            guard let best = candidates.max(by: { $0.score < $1.score })?.element else {
-                throw ReadabilityError.noReadableContent
-            }
-            contentRoot = try wrapSingle(best, baseUri: body.getBaseUri())
+            contentRoot = try wrapSingleWithSiblingInclusion(
+                best: topCandidate,
+                allCandidates: candidates,
+                baseUri: body.getBaseUri()
+            )
         }
 
         // Fidelity cleaning pipeline
@@ -104,11 +170,14 @@ public struct ReadabilityExtractor: Sendable {
         try stripEmptyParagraphsPass.apply(to: contentRoot, options: options)
         try unwrapRedundantSpansAndDivsPass.apply(to: contentRoot, options: options)
 
-        let leadImageURL = try leadImageExtractor.extractLeadImageURL(
+        var leadImageURL = try leadImageExtractor.extractLeadImageURL(
             doc: doc,
             contentRoot: contentRoot,
             fallbackURL: url
         )
+        if leadImageURL == nil {
+            leadImageURL = metadata.jsonLDLeadImageURL
+        }
 
         #if DEBUG
         logger.debug("Extracting final HTML for \(url.absoluteString, privacy: .public)")
@@ -123,15 +192,15 @@ public struct ReadabilityExtractor: Sendable {
         )
         #endif
 
-        guard textContent.trimmingCharacters(in: .whitespacesAndNewlines).count >= 80 else {
+        guard textContent.trimmingCharacters(in: .whitespacesAndNewlines).count >= attempt.minimumTextLength else {
             throw ReadabilityError.noReadableContent
         }
 
         return Article(
             url: url,
-            title: title,
-            byline: byline,
-            excerpt: (excerpt?.isEmpty == false ? excerpt : makeExcerpt(from: textContent)),
+            title: metadata.title,
+            byline: metadata.byline,
+            excerpt: (metadata.excerpt?.isEmpty == false ? metadata.excerpt : makeExcerpt(from: textContent)),
             contentHTML: contentHTML,
             textContent: textContent,
             leadImageURL: leadImageURL
@@ -140,14 +209,15 @@ public struct ReadabilityExtractor: Sendable {
 
     // MARK: - Metadata
 
-    private func extractMetadata(doc: Document, fallbackURL: URL) throws -> (String, String?, String?) {
+    private func extractMetadata(doc: Document, fallbackURL: URL) throws -> MetadataResult {
+        let jsonLDMetadata = try extractJSONLDMetadata(doc: doc, fallbackURL: fallbackURL)
         let ogTitle = try doc.select("meta[property=og:title]").first()?.attr("content")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let docTitle = try doc.title().trimmingCharacters(in: .whitespacesAndNewlines)
         let h1 = try doc.select("h1").first()?.text()
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        let title = [ogTitle, docTitle, h1]
+        let title = [ogTitle, jsonLDMetadata.title, docTitle, h1]
             .compactMap { $0 }
             .first(where: { !$0.isEmpty })
         ?? (fallbackURL.host ?? "Untitled")
@@ -159,16 +229,167 @@ public struct ReadabilityExtractor: Sendable {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             ?? doc.select(".byline, .author, [class*=author], [id*=author]").first?.text()
                 .trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? jsonLDMetadata.byline
 
         let excerpt =
             try doc.select("meta[name=description]").first?.attr("content")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             ?? doc.select("meta[property=og:description]").first?.attr("content")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? jsonLDMetadata.excerpt
 
         let by = (byline?.isEmpty == true) ? nil : byline
         let ex = (excerpt?.isEmpty == true) ? nil : excerpt
-        return (title, by, ex)
+        return MetadataResult(
+            title: title,
+            byline: by,
+            excerpt: ex,
+            jsonLDLeadImageURL: jsonLDMetadata.leadImageURL
+        )
+    }
+
+    private func extractJSONLDMetadata(doc: Document, fallbackURL: URL) throws -> JSONLDMetadata {
+        let scripts = try doc.select("script[type=application/ld+json]").array()
+        guard !scripts.isEmpty else {
+            return JSONLDMetadata(title: nil, byline: nil, excerpt: nil, leadImageURL: nil)
+        }
+
+        var bestMetadata = JSONLDMetadata(title: nil, byline: nil, excerpt: nil, leadImageURL: nil)
+        var bestScore = -1
+
+        for script in scripts {
+            let scriptContent = (try? script.html()) ?? script.data()
+            let raw = scriptContent.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !raw.isEmpty, let data = raw.data(using: .utf8) else { continue }
+            guard let object = try? JSONSerialization.jsonObject(with: data) else { continue }
+
+            let dictionaries = flattenJSONDictionaries(object)
+            for dictionary in dictionaries {
+                let candidate = jsonLDMetadataCandidate(from: dictionary, fallbackURL: fallbackURL)
+                guard candidate.score > 0 else { continue }
+                if candidate.score > bestScore {
+                    bestMetadata = candidate.metadata
+                    bestScore = candidate.score
+                } else if candidate.score == bestScore {
+                    bestMetadata = mergeJSONLDMetadata(preferred: bestMetadata, fallback: candidate.metadata)
+                }
+            }
+        }
+
+        return bestMetadata
+    }
+
+    private func flattenJSONDictionaries(_ object: Any) -> [[String: Any]] {
+        if let dictionary = object as? [String: Any] {
+            var out = [dictionary]
+            if let graph = dictionary["@graph"] {
+                out.append(contentsOf: flattenJSONDictionaries(graph))
+            }
+            return out
+        }
+        if let array = object as? [Any] {
+            return array.flatMap { flattenJSONDictionaries($0) }
+        }
+        return []
+    }
+
+    private func jsonLDMetadataCandidate(
+        from dictionary: [String: Any],
+        fallbackURL: URL
+    ) -> (metadata: JSONLDMetadata, score: Int) {
+        let isArticleType = jsonLDContainsArticleType(dictionary["@type"])
+        let title = normalizedJSONValue(dictionary["headline"] ?? dictionary["name"])
+        let byline = jsonLDAuthorName(from: dictionary["author"])
+        let excerpt = normalizedJSONValue(dictionary["description"])
+        let imageURL = jsonLDImageURL(from: dictionary["image"], fallbackURL: fallbackURL)
+
+        var score = 0
+        if isArticleType { score += 3 }
+        if title != nil { score += 2 }
+        if byline != nil { score += 1 }
+        if excerpt != nil { score += 1 }
+        if imageURL != nil { score += 1 }
+
+        return (
+            JSONLDMetadata(title: title, byline: byline, excerpt: excerpt, leadImageURL: imageURL),
+            score
+        )
+    }
+
+    private func mergeJSONLDMetadata(preferred: JSONLDMetadata, fallback: JSONLDMetadata) -> JSONLDMetadata {
+        JSONLDMetadata(
+            title: preferred.title ?? fallback.title,
+            byline: preferred.byline ?? fallback.byline,
+            excerpt: preferred.excerpt ?? fallback.excerpt,
+            leadImageURL: preferred.leadImageURL ?? fallback.leadImageURL
+        )
+    }
+
+    private func jsonLDContainsArticleType(_ value: Any?) -> Bool {
+        if let type = value as? String {
+            return type.lowercased().contains("article")
+        }
+        if let types = value as? [Any] {
+            return types.contains(where: { jsonLDContainsArticleType($0) })
+        }
+        return false
+    }
+
+    private func jsonLDAuthorName(from value: Any?) -> String? {
+        if let author = normalizedJSONValue(value) {
+            return author
+        }
+        if let dictionary = value as? [String: Any] {
+            return normalizedJSONValue(dictionary["name"] ?? dictionary["@id"])
+        }
+        if let authors = value as? [Any] {
+            for author in authors {
+                if let name = jsonLDAuthorName(from: author) {
+                    return name
+                }
+            }
+        }
+        return nil
+    }
+
+    private func jsonLDImageURL(from value: Any?, fallbackURL: URL) -> URL? {
+        if let image = normalizedJSONValue(value) {
+            return resolveMetadataURL(image, fallbackURL: fallbackURL)
+        }
+        if let dictionary = value as? [String: Any] {
+            if let url = normalizedJSONValue(dictionary["url"] ?? dictionary["@id"]) {
+                return resolveMetadataURL(url, fallbackURL: fallbackURL)
+            }
+        }
+        if let images = value as? [Any] {
+            for image in images {
+                if let resolved = jsonLDImageURL(from: image, fallbackURL: fallbackURL) {
+                    return resolved
+                }
+            }
+        }
+        return nil
+    }
+
+    private func normalizedJSONValue(_ value: Any?) -> String? {
+        guard let value else { return nil }
+        if let text = value as? String {
+            let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return cleaned.isEmpty ? nil : cleaned
+        }
+        if let number = value as? NSNumber {
+            return number.stringValue
+        }
+        return nil
+    }
+
+    private func resolveMetadataURL(_ raw: String, fallbackURL: URL) -> URL? {
+        let cleaned = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return nil }
+        if let absolute = URL(string: cleaned), absolute.scheme != nil {
+            return absolute
+        }
+        return URL(string: cleaned, relativeTo: fallbackURL)?.absoluteURL
     }
 
     // MARK: - Candidate collection (Readability + Density + Propagation)
@@ -177,30 +398,12 @@ public struct ReadabilityExtractor: Sendable {
         var scoreByPath: [String: Double] = [:]
         var elementByPath: [String: Element] = [:]
 
-        func path(for el: Element) throws -> String {
-            var parts: [String] = []
-            var current: Element? = el
-            while let c = current {
-                let tag = c.tagName().lowercased()
-                let idx: Int
-                if let parent = c.parent() {
-                    let siblings = parent.children().array().filter { $0.tagName() == c.tagName() }
-                    idx = siblings.firstIndex(where: { $0 === c }) ?? 0
-                } else {
-                    idx = 0
-                }
-                parts.append("\(tag)[\(idx)]")
-                current = c.parent()
-            }
-            return parts.reversed().joined(separator: "/")
-        }
-
         // Document order index
         let all = try body.select("*").array()
         var orderIndexByPath: [String: Int] = [:]
         orderIndexByPath.reserveCapacity(all.count)
         for (i, el) in all.enumerated() {
-            let p = try path(for: el)
+            let p = domPath(for: el)
             if orderIndexByPath[p] == nil { orderIndexByPath[p] = i }
         }
 
@@ -216,7 +419,7 @@ public struct ReadabilityExtractor: Sendable {
             for (level, node) in [(1.0, parent), (2.0, grand)] {
                 guard let node else { continue }
 
-                let nodePath = try path(for: node)
+                let nodePath = domPath(for: node)
                 let classWeight = try classWeightScorer.score(node)
                 let ld = try linkDensityScorer.score(node)
                 let density = try DensityScoring.score(element: node)
@@ -236,7 +439,7 @@ public struct ReadabilityExtractor: Sendable {
             let density = try DensityScoring.score(element: el)
             guard density > 0 else { continue }
 
-            let nodePath = try path(for: el)
+            let nodePath = domPath(for: el)
             let classWeight = try classWeightScorer.score(el)
             let ld = try linkDensityScorer.score(el)
 
@@ -244,6 +447,11 @@ public struct ReadabilityExtractor: Sendable {
             scoreByPath[nodePath, default: 0] += inc
             elementByPath[nodePath] = el
         }
+
+        try applySiblingCandidateBoost(
+            scoreByPath: &scoreByPath,
+            elementByPath: &elementByPath
+        )
 
         var out: [ClusteringCandidate] = []
         out.reserveCapacity(scoreByPath.count)
@@ -259,11 +467,120 @@ public struct ReadabilityExtractor: Sendable {
         return out
     }
 
-    private func wrapSingle(_ best: Element, baseUri: String) throws -> Element {
+    private func wrapSingleWithSiblingInclusion(
+        best: ClusteringCandidate,
+        allCandidates: [ClusteringCandidate],
+        baseUri: String
+    ) throws -> Element {
         let wrapper = Element(Tag(options.wrapInArticleTag ? "article" : "div"), baseUri)
         try wrapper.addClass("readableswift-article")
-        try wrapper.appendChild(best.copy() as! Node)
+        guard let parent = best.element.parent() else {
+            try wrapper.appendChild(best.element.copy() as! Node)
+            return wrapper
+        }
+
+        let scoreByPath = Dictionary(uniqueKeysWithValues: allCandidates.map { ($0.path, $0.score) })
+        let inclusionThreshold = max(10.0, best.score * 0.2)
+
+        for sibling in parent.children().array() {
+            if sibling === best.element {
+                try wrapper.appendChild(sibling.copy() as! Node)
+                continue
+            }
+            if try shouldIncludeSibling(
+                sibling,
+                scoreByPath: scoreByPath,
+                inclusionThreshold: inclusionThreshold
+            ) {
+                try wrapper.appendChild(sibling.copy() as! Node)
+            }
+        }
+
         return wrapper
+    }
+
+    private func shouldIncludeSibling(
+        _ sibling: Element,
+        scoreByPath: [String: Double],
+        inclusionThreshold: Double
+    ) throws -> Bool {
+        let path = domPath(for: sibling)
+        if let knownScore = scoreByPath[path], knownScore >= inclusionThreshold {
+            return true
+        }
+
+        let text = try sibling.text().trimmingCharacters(in: .whitespacesAndNewlines)
+        let textLength = text.count
+        guard textLength >= 60 else { return false }
+
+        let linkDensity = try linkDensityScorer.score(sibling)
+        let classWeight = try classWeightScorer.score(sibling)
+        let tag = sibling.tagName().lowercased()
+
+        if tag == "p" && linkDensity < 0.25 && textLength >= 80 {
+            return true
+        }
+
+        return textLength >= 180 && linkDensity < 0.33 && classWeight > -20
+    }
+
+    private func applySiblingCandidateBoost(
+        scoreByPath: inout [String: Double],
+        elementByPath: inout [String: Element]
+    ) throws {
+        guard let (topPath, topScore) = scoreByPath.max(by: { $0.value < $1.value }),
+              let topElement = elementByPath[topPath],
+              let parent = topElement.parent() else {
+            return
+        }
+
+        let threshold = max(10.0, topScore * 0.2)
+        for sibling in parent.children().array() {
+            if sibling === topElement { continue }
+            guard try shouldIncludeSibling(
+                sibling,
+                scoreByPath: scoreByPath,
+                inclusionThreshold: threshold
+            ) else {
+                continue
+            }
+
+            let path = domPath(for: sibling)
+            let textLength = try sibling.text().trimmingCharacters(in: .whitespacesAndNewlines).count
+            let linkDensity = try linkDensityScorer.score(sibling)
+            let boost = max(5.0, min(topScore * 0.35, Double(textLength) / 30.0))
+            let weightedBoost = boost * (1.0 - min(0.7, linkDensity))
+            guard weightedBoost > 0 else { continue }
+
+            scoreByPath[path, default: 0] = max(scoreByPath[path] ?? 0, weightedBoost)
+            elementByPath[path] = sibling
+        }
+    }
+
+    private func domPath(for element: Element) -> String {
+        var parts: [String] = []
+        var current: Element? = element
+        while let node = current {
+            let tag = node.tagName().lowercased()
+            let index: Int
+            if let parent = node.parent() {
+                let siblings = parent.children().array().filter { $0.tagName() == node.tagName() }
+                index = siblings.firstIndex(where: { $0 === node }) ?? 0
+            } else {
+                index = 0
+            }
+            parts.append("\(tag)[\(index)]")
+            current = node.parent()
+        }
+        return parts.reversed().joined(separator: "/")
+    }
+
+    private func articleQualityScore(_ article: Article) -> Double {
+        let textLength = article.textContent.trimmingCharacters(in: .whitespacesAndNewlines).count
+        let paragraphCount = article.contentHTML.components(separatedBy: "<p").count - 1
+        let linkCount = article.contentHTML.components(separatedBy: "<a").count - 1
+        let linkPenalty = min(0.6, Double(linkCount) / Double(max(1, paragraphCount + 1)))
+        return Double(textLength) + Double(paragraphCount * 80) - linkPenalty * 250.0
     }
 
     private func makeExcerpt(from text: String) -> String {

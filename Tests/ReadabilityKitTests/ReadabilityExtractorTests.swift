@@ -527,4 +527,90 @@ struct ReadabilityExtractorTests {
         #expect(article.contentHTML.contains("<p"))
     }
 
+    @Test("Falls back to JSON-LD metadata when OG/meta tags are missing")
+    func extractFromHTML_jsonLDFallbackMetadata() throws {
+        let html = """
+            <html>
+              <head>
+                <title>Fallback Title</title>
+                <script type="application/ld+json">
+                  {
+                    "@context": "https://schema.org",
+                    "@type": "NewsArticle",
+                    "headline": "JSON-LD Headline",
+                    "description": "JSON-LD description for metadata fallback.",
+                    "author": { "@type": "Person", "name": "Jordan Writer" },
+                    "image": { "@type": "ImageObject", "url": "https://cdn.example.com/jsonld-hero.jpg" }
+                  }
+                </script>
+              </head>
+              <body>
+                <article>
+                  <p>This article body has enough text to satisfy readability extraction and validate metadata fallback behavior.</p>
+                  <p>Additional paragraph content confirms the parser can produce stable article output with JSON-LD metadata only.</p>
+                </article>
+              </body>
+            </html>
+            """
+
+        let extractor = ReadabilityExtractor()
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://example.com/jsonld")!)
+
+        #expect(article.title == "JSON-LD Headline")
+        #expect(article.byline == "Jordan Writer")
+        #expect(article.excerpt == "JSON-LD description for metadata fallback.")
+        #expect(article.leadImageURL?.absoluteString == "https://cdn.example.com/jsonld-hero.jpg")
+    }
+
+    @Test("Includes qualifying sibling content when using single-candidate mode")
+    func extractFromHTML_singleModeIncludesSiblingContent() throws {
+        let html = """
+            <html>
+              <head><title>Sibling Inclusion</title></head>
+              <body>
+                <p class="standfirst">This standfirst introduces the story context with enough detail to qualify as meaningful article text for extraction heuristics.</p>
+
+                <div class="article-content">
+                  <h1>Deep Dive Release Notes</h1>
+                  <p>The main body covers architectural changes, migration impacts, and rollout safety checks for distributed services.</p>
+                  <p>It also explains follow-up work, monitoring strategy, and incident-response preparation for launch day.</p>
+                </div>
+
+                <div class="related-links">
+                  <a href="/related-a">Related A</a>
+                  <a href="/related-b">Related B</a>
+                </div>
+              </body>
+            </html>
+            """
+
+        let extractor = ReadabilityExtractor(options: .init(enableClustering: false))
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://example.com/siblings")!)
+
+        #expect(article.textContent.contains("This standfirst introduces the story context"))
+        #expect(article.textContent.contains("The main body covers architectural changes"))
+    }
+
+    @Test("Retries with relaxed pruning when strict unlikely-candidate removal drops real content")
+    func extractFromHTML_retriesWithRelaxedPruning() throws {
+        let html = """
+            <html>
+              <head><title>Opinion Column</title></head>
+              <body>
+                <div class="comments">
+                  <h1>Why Regional Trains Need Better Scheduling</h1>
+                  <p>Commuters across the region are reporting longer waits, missed transfers, and inconsistent service updates throughout the week.</p>
+                  <p>Transport planners say capacity constraints and outdated dispatch workflows are driving delays that compound during evening peaks.</p>
+                </div>
+              </body>
+            </html>
+            """
+
+        let extractor = ReadabilityExtractor()
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://example.com/column")!)
+
+        #expect(article.textContent.contains("Commuters across the region are reporting longer waits"))
+        #expect(article.textContent.contains("Transport planners say capacity constraints"))
+    }
+
 }
