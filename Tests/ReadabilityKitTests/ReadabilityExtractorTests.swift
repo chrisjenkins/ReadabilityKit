@@ -510,4 +510,21 @@ struct ReadabilityExtractorTests {
         #expect(article.contentHTML.contains("<i>italic text</i>"))
     }
 
+    @Test("Parses included BBC fixture HTML")
+    func extractFromHTML_bbcFixture_parsesCorrectly() throws {
+        let fixtureURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("Resources")
+            .appendingPathComponent("bbc.html")
+        let html = try String(contentsOf: fixtureURL, encoding: .utf8)
+
+        let extractor = ReadabilityExtractor()
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://www.bbc.com/news/articles/c70ne31d884o")!)
+
+        #expect(article.title.contains("Government abandons plans to delay 30 council elections"))
+        #expect(!article.textContent.isEmpty)
+        #expect(article.textContent.contains("The government has abandoned plans to delay 30 council elections in England"))
+        #expect(article.contentHTML.contains("<p"))
+    }
+
 }

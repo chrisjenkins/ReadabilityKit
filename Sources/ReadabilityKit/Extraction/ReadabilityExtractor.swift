@@ -109,12 +109,19 @@ public struct ReadabilityExtractor: Sendable {
             contentRoot: contentRoot,
             fallbackURL: url
         )
+
+        #if DEBUG
         logger.debug("Extracting final HTML for \(url.absoluteString, privacy: .public)")
+        #endif
+
         let contentHTML = try contentRoot.outerHtml()
         let textContent = try contentRoot.text()
+
+        #if DEBUG
         logger.debug(
             "Extracted final HTML for \(url.absoluteString, privacy: .public): \(contentHTML, privacy: .public)"
         )
+        #endif
 
         guard textContent.trimmingCharacters(in: .whitespacesAndNewlines).count >= 80 else {
             throw ReadabilityError.noReadableContent
