@@ -22,6 +22,7 @@ public struct ExtractionOptions: Sendable {
     public var keepVideos: Bool
     public var keepAudio: Bool
     public var wrapInArticleTag: Bool
+    public var filterHiddenNodes: Bool
 
     public var enableClustering: Bool
     public var clusterTopN: Int
@@ -39,6 +40,7 @@ public struct ExtractionOptions: Sendable {
     ///   - keepVideos: Preserves video/source elements during cleanup.
     ///   - keepAudio: Preserves audio/source elements during cleanup.
     ///   - wrapInArticleTag: Wraps final output in `<article>` instead of `<div>` when true.
+    ///   - filterHiddenNodes: Removes hidden or aria-hidden DOM regions and skips them during scoring.
     ///   - enableClustering: Enables multi-node clustering instead of single best-node selection.
     ///   - clusterTopN: Maximum top-scoring nodes considered for cluster merge.
     ///   - clusterMaxRankGap: Max document-order distance allowed when clustering nodes.
@@ -52,6 +54,7 @@ public struct ExtractionOptions: Sendable {
         keepVideos: Bool = true,
         keepAudio: Bool = true,
         wrapInArticleTag: Bool = true,
+        filterHiddenNodes: Bool = true,
         enableClustering: Bool = true,
         clusterTopN: Int = 12,
         clusterMaxRankGap: Int = 20,
@@ -65,6 +68,7 @@ public struct ExtractionOptions: Sendable {
         self.keepVideos = keepVideos
         self.keepAudio = keepAudio
         self.wrapInArticleTag = wrapInArticleTag
+        self.filterHiddenNodes = filterHiddenNodes
 
         self.enableClustering = enableClustering
         self.clusterTopN = clusterTopN

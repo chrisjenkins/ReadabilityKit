@@ -38,8 +38,10 @@ public struct ReadabilityExtractor: Sendable {
     private let paragraphScorer = ParagraphScorer()
     private let classWeightScorer = ClassWeightScorer()
     private let linkDensityScorer = LinkDensityScorer()
+    private let visibilityFilter = VisibilityFilter()
     private let removeScriptsStylesAndUnsafePass = RemoveScriptsStylesAndUnsafePass()
     private let normalizeBreaksPass = NormalizeBreaksPass()
+    private let removeHiddenElementsPass = RemoveHiddenElementsPass()
     private let removeUnlikelyCandidatesPass = RemoveUnlikelyCandidatesPass()
     private let removeFormsButtonsEtcPass = RemoveFormsButtonsEtcPass()
     private let removeLikelyJunkBlocksPass = RemoveLikelyJunkBlocksPass()
@@ -144,6 +146,9 @@ public struct ReadabilityExtractor: Sendable {
 
         try removeScriptsStylesAndUnsafePass.apply(to: doc, options: options)
         try normalizeBreaksPass.apply(to: doc, options: options)
+        if options.filterHiddenNodes {
+            try removeHiddenElementsPass.apply(to: doc, options: options)
+        }
         let preferredDomainRoot = (options.domainRuleMode == .preferRules)
             ? try preferredDomainContentRoot(rules: matchingRules, doc: doc)
             : nil
@@ -486,6 +491,10 @@ public struct ReadabilityExtractor: Sendable {
         // Paragraph-based scoring + propagation to parent/grandparent
         let paragraphs = try body.select("p, pre, td, blockquote").array()
         for p in paragraphs {
+            if options.filterHiddenNodes {
+                let isVisible = try visibilityFilter.isProbablyVisible(p)
+                if !isVisible { continue }
+            }
             let paragraphScore = try paragraphScorer.score(p)
             guard paragraphScore > 0 else { continue }
 
@@ -494,6 +503,10 @@ public struct ReadabilityExtractor: Sendable {
 
             for (level, node) in [(1.0, parent), (2.0, grand)] {
                 guard let node else { continue }
+                if options.filterHiddenNodes {
+                    let isVisible = try visibilityFilter.isProbablyVisible(node)
+                    if !isVisible { continue }
+                }
 
                 let nodePath = domPath(for: node)
                 let classWeight = try classWeightScorer.score(node)
@@ -512,6 +525,10 @@ public struct ReadabilityExtractor: Sendable {
         // Container density pass (helps pages with few <p>)
         let containers = try body.select("article, main, section, div").array()
         for el in containers {
+            if options.filterHiddenNodes {
+                let isVisible = try visibilityFilter.isProbablyVisible(el)
+                if !isVisible { continue }
+            }
             let density = try DensityScoring.score(element: el)
             guard density > 0 else { continue }
 
@@ -525,6 +542,10 @@ public struct ReadabilityExtractor: Sendable {
         }
 
         for adjustment in candidateAdjustments where adjustment.scoreDelta != 0 {
+            if options.filterHiddenNodes {
+                let isVisible = try visibilityFilter.isProbablyVisible(adjustment.element)
+                if !isVisible { continue }
+            }
             let nodePath = domPath(for: adjustment.element)
             scoreByPath[nodePath, default: 0] += adjustment.scoreDelta
             elementByPath[nodePath] = adjustment.element
@@ -593,6 +614,11 @@ public struct ReadabilityExtractor: Sendable {
         scoreByPath: [String: Double],
         inclusionThreshold: Double
     ) throws -> Bool {
+        if options.filterHiddenNodes {
+            let isVisible = try visibilityFilter.isProbablyVisible(sibling)
+            if !isVisible { return false }
+        }
+
         let path = domPath(for: sibling)
         if let knownScore = scoreByPath[path], knownScore >= inclusionThreshold {
             return true

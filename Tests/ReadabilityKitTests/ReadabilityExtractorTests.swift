@@ -341,6 +341,87 @@ struct ReadabilityExtractorTests {
         #expect(article.contentHTML.contains("visible.jpg"))
     }
 
+    @Test("Excludes hidden sidebar from candidate scoring")
+    func extractFromHTML_hiddenSidebarDoesNotWinCandidateSelection() throws {
+        let html = """
+            <html>
+              <head><title>Hidden Sidebar</title></head>
+              <body>
+                <aside hidden class="sidebar content">
+                  <h2>Related coverage</h2>
+                  <p>This hidden block contains a lot of text and links that should never be selected as article content.</p>
+                  <p>Even with substantial copy, hidden nodes must not influence readability scoring decisions.</p>
+                </aside>
+
+                <article class="story-body">
+                  <h1>Visible Story</h1>
+                  <p>Visible article text explains the core event with enough narrative detail to satisfy readability scoring.</p>
+                  <p>Additional visible paragraphs ensure this section is clearly the correct extraction target.</p>
+                </article>
+              </body>
+            </html>
+            """
+
+        let extractor = ReadabilityExtractor()
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://example.com/hidden-sidebar")!)
+
+        #expect(article.textContent.contains("Visible article text explains the core event"))
+        #expect(!article.textContent.contains("Related coverage"))
+        #expect(!article.textContent.contains("hidden block contains"))
+    }
+
+    @Test("Excludes aria-hidden nodes from candidate scoring")
+    func extractFromHTML_ariaHiddenNodesAreExcludedFromScoring() throws {
+        let html = """
+            <html>
+              <head><title>Aria Hidden</title></head>
+              <body>
+                <section aria-hidden="true" class="content promo">
+                  <h2>Promoted module</h2>
+                  <p>This text should be ignored because it is explicitly marked aria-hidden for assistive technologies.</p>
+                </section>
+
+                <main class="article-content">
+                  <h1>Accessibility-Aware Extraction</h1>
+                  <p>The extractor should prioritize visible narrative content and avoid hidden promotional containers.</p>
+                  <p>This second paragraph provides enough text to pass extraction thresholds while remaining visible.</p>
+                </main>
+              </body>
+            </html>
+            """
+
+        let extractor = ReadabilityExtractor()
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://example.com/aria-hidden")!)
+
+        #expect(article.textContent.contains("Accessibility-Aware Extraction"))
+        #expect(!article.textContent.contains("Promoted module"))
+        #expect(!article.textContent.contains("explicitly marked aria-hidden"))
+    }
+
+    @Test("Can disable hidden-node filtering and keep hidden content")
+    func extractFromHTML_canDisableHiddenNodeFiltering() throws {
+        let html = """
+            <html>
+              <head><title>Hidden Toggle</title></head>
+              <body>
+                <article>
+                  <h1>Visibility Option</h1>
+                  <p>Main body text remains visible and should always be extracted.</p>
+                  <div style="display: none;">
+                    <p>Hidden appendix text only appears when hidden filtering is disabled.</p>
+                  </div>
+                </article>
+              </body>
+            </html>
+            """
+
+        let extractor = ReadabilityExtractor(options: .init(filterHiddenNodes: false))
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://example.com/hidden-toggle")!)
+
+        #expect(article.textContent.contains("Main body text remains visible"))
+        #expect(article.textContent.contains("Hidden appendix text only appears"))
+    }
+
     @Test("Strips empty paragraphs from extracted HTML")
     func extractFromHTML_stripsEmptyParagraphs() throws {
         let html = """
