@@ -49,6 +49,7 @@ public struct ReadabilityExtractor: Sendable {
     private let cleanTablesPass = CleanTablesPass()
     private let stripEmptyParagraphsPass = StripEmptyParagraphsPass()
     private let unwrapRedundantSpansAndDivsPass = UnwrapRedundantSpansAndDivsPass()
+    private let dedupeHeadersPass = DedupeHeadersPass()
     private let leadImageExtractor = LeadImageExtractor()
     private let domainRuleRegistry = DomainRuleRegistry.default
 
@@ -198,6 +199,12 @@ public struct ReadabilityExtractor: Sendable {
         try cleanTablesPass.apply(to: contentRoot, options: options)
         try stripEmptyParagraphsPass.apply(to: contentRoot, options: options)
         try unwrapRedundantSpansAndDivsPass.apply(to: contentRoot, options: options)
+        let resolvedTitle = domainMetadata.title ?? metadata.title
+        try dedupeHeadersPass.apply(
+            to: contentRoot,
+            resolvedTitle: resolvedTitle,
+            options: options
+        )
 
         var leadImageURL = try leadImageExtractor.extractLeadImageURL(
             doc: doc,
@@ -227,7 +234,7 @@ public struct ReadabilityExtractor: Sendable {
 
         return Article(
             url: url,
-            title: domainMetadata.title ?? metadata.title,
+            title: resolvedTitle,
             byline: domainMetadata.byline ?? metadata.byline,
             excerpt: (
                 (domainMetadata.excerpt ?? metadata.excerpt)?.isEmpty == false

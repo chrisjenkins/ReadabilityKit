@@ -23,6 +23,8 @@ public struct ExtractionOptions: Sendable {
     public var keepAudio: Bool
     public var wrapInArticleTag: Bool
     public var filterHiddenNodes: Bool
+    public var dedupeTitleHeaders: Bool
+    public var dropPreambleHeadersBeforeFirstParagraph: Bool
 
     public var enableClustering: Bool
     public var clusterTopN: Int
@@ -41,6 +43,8 @@ public struct ExtractionOptions: Sendable {
     ///   - keepAudio: Preserves audio/source elements during cleanup.
     ///   - wrapInArticleTag: Wraps final output in `<article>` instead of `<div>` when true.
     ///   - filterHiddenNodes: Removes hidden or aria-hidden DOM regions and skips them during scoring.
+    ///   - dedupeTitleHeaders: Removes in-body header nodes that duplicate the resolved article title.
+    ///   - dropPreambleHeadersBeforeFirstParagraph: Removes preamble headers before first body paragraph.
     ///   - enableClustering: Enables multi-node clustering instead of single best-node selection.
     ///   - clusterTopN: Maximum top-scoring nodes considered for cluster merge.
     ///   - clusterMaxRankGap: Max document-order distance allowed when clustering nodes.
@@ -55,6 +59,8 @@ public struct ExtractionOptions: Sendable {
         keepAudio: Bool = true,
         wrapInArticleTag: Bool = true,
         filterHiddenNodes: Bool = true,
+        dedupeTitleHeaders: Bool = true,
+        dropPreambleHeadersBeforeFirstParagraph: Bool = true,
         enableClustering: Bool = true,
         clusterTopN: Int = 12,
         clusterMaxRankGap: Int = 20,
@@ -69,6 +75,8 @@ public struct ExtractionOptions: Sendable {
         self.keepAudio = keepAudio
         self.wrapInArticleTag = wrapInArticleTag
         self.filterHiddenNodes = filterHiddenNodes
+        self.dedupeTitleHeaders = dedupeTitleHeaders
+        self.dropPreambleHeadersBeforeFirstParagraph = dropPreambleHeadersBeforeFirstParagraph
 
         self.enableClustering = enableClustering
         self.clusterTopN = clusterTopN

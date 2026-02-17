@@ -422,6 +422,85 @@ struct ReadabilityExtractorTests {
         #expect(article.textContent.contains("Hidden appendix text only appears"))
     }
 
+    @Test("Removes title-duplicate headers from extracted content")
+    func extractFromHTML_dedupesTitleHeaders() throws {
+        let html = """
+            <html>
+              <head>
+                <title>Example Story</title>
+                <meta property="og:title" content="Example Story">
+              </head>
+              <body>
+                <article class="article-content">
+                  <h1>Example Story</h1>
+                  <h2>Example Story - Example.com</h2>
+                  <p>This paragraph contains enough descriptive text to satisfy readability extraction requirements.</p>
+                  <h2>Background</h2>
+                  <p>Additional content explains why section headers should be preserved when they are not duplicates.</p>
+                </article>
+              </body>
+            </html>
+            """
+
+        let extractor = ReadabilityExtractor()
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://example.com/story")!)
+
+        #expect(article.title == "Example Story")
+        #expect(!article.contentHTML.contains("<h1>Example Story</h1>"))
+        #expect(!article.contentHTML.contains("Example Story - Example.com"))
+        #expect(article.contentHTML.contains("<h2>Background</h2>"))
+        #expect(article.textContent.contains("This paragraph contains enough descriptive text"))
+    }
+
+    @Test("Can disable title/header dedupe")
+    func extractFromHTML_canDisableTitleHeaderDedupe() throws {
+        let html = """
+            <html>
+              <head>
+                <title>Deep Report</title>
+                <meta property="og:title" content="Deep Report">
+              </head>
+              <body>
+                <article>
+                  <h1>Deep Report</h1>
+                  <p>Main article paragraph with sufficient narrative text to pass extractor thresholds.</p>
+                  <p>Second paragraph keeps the article robust and non-trivial for scoring.</p>
+                </article>
+              </body>
+            </html>
+            """
+
+        let extractor = ReadabilityExtractor(
+            options: .init(dedupeTitleHeaders: false, dropPreambleHeadersBeforeFirstParagraph: false)
+        )
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://example.com/deep-report")!)
+
+        #expect(article.contentHTML.contains("<h1>Deep Report</h1>"))
+    }
+
+    @Test("Removes preamble header before first paragraph")
+    func extractFromHTML_removesPreambleHeaderBeforeFirstParagraph() throws {
+        let html = """
+            <html>
+              <head><title>Preamble Cleanup</title></head>
+              <body>
+                <article class="story">
+                  <h2>Updated 2 hours ago</h2>
+                  <p>This opening paragraph contains enough text to ensure extraction succeeds while validating preamble cleanup.</p>
+                  <h2>Section Context</h2>
+                  <p>Subsequent section heading should remain because it is part of the article structure.</p>
+                </article>
+              </body>
+            </html>
+            """
+
+        let extractor = ReadabilityExtractor()
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://example.com/preamble")!)
+
+        #expect(!article.contentHTML.contains("Updated 2 hours ago"))
+        #expect(article.contentHTML.contains("<h2>Section Context</h2>"))
+    }
+
     @Test("Strips empty paragraphs from extracted HTML")
     func extractFromHTML_stripsEmptyParagraphs() throws {
         let html = """
