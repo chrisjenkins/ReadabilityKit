@@ -17,6 +17,11 @@ public struct ReadabilityExtractor: Sendable {
         let minimumTextLength: Int
     }
 
+    private struct SinglePageExtractionResult {
+        let article: Article
+        let nextPageURL: URL?
+    }
+
     private struct MetadataResult {
         let title: String
         let byline: String?
@@ -51,6 +56,7 @@ public struct ReadabilityExtractor: Sendable {
     private let unwrapRedundantSpansAndDivsPass = UnwrapRedundantSpansAndDivsPass()
     private let dedupeHeadersPass = DedupeHeadersPass()
     private let leadImageExtractor = LeadImageExtractor()
+    private let nextPageDetector = NextPageDetector()
     private let domainRuleRegistry = DomainRuleRegistry.default
 
     /// Creates an extractor with a pluggable HTML loader and parsing options.
@@ -76,8 +82,11 @@ public struct ReadabilityExtractor: Sendable {
     /// - Returns: An `Article` containing metadata, cleaned HTML, and plain text.
     /// - Throws: `ReadabilityError` when loading/parsing/content selection fails.
     public func extract(from url: URL) async throws -> Article {
+        if options.enablePaginationMerge {
+            return try await extractWithPagination(from: url)
+        }
         let html = try await loader.fetchHTML(url: url)
-        return try extract(fromHTML: html, url: url)
+        return try extractSinglePage(fromHTML: html, url: url).article
     }
 
     /// Parses already-available HTML and extracts the most readable article region.
@@ -91,6 +100,65 @@ public struct ReadabilityExtractor: Sendable {
     /// - Returns: An extracted `Article`.
     /// - Throws: `ReadabilityError` when HTML is empty, parsing fails, or readable content is not found.
     public func extract(fromHTML html: String, url: URL) throws -> Article {
+        try extractSinglePage(fromHTML: html, url: url).article
+    }
+
+    private func extractWithPagination(from url: URL) async throws -> Article {
+        var visitedURLs = Set<String>()
+        var mergedArticles: [Article] = []
+        var mergedPageURLs: [URL] = []
+        var nextURL: URL? = url
+        var firstDetectedNextPageURL: URL?
+
+        while let pageURL = nextURL, mergedArticles.count < options.maxPaginationPages {
+            let key = normalizedURLKey(pageURL)
+            if visitedURLs.contains(key) { break }
+            visitedURLs.insert(key)
+
+            let html = try await loader.fetchHTML(url: pageURL)
+            let pageResult = try extractSinglePage(fromHTML: html, url: pageURL)
+            let pageArticle = pageResult.article
+
+            if mergedArticles.isEmpty {
+                firstDetectedNextPageURL = pageResult.nextPageURL
+                mergedArticles.append(pageArticle)
+                mergedPageURLs.append(pageURL)
+            } else {
+                if isLikelyDuplicatePage(pageArticle, comparedWith: mergedArticles) {
+                    break
+                }
+                mergedArticles.append(pageArticle)
+                mergedPageURLs.append(pageURL)
+            }
+
+            guard let candidateNextURL = pageResult.nextPageURL else {
+                nextURL = nil
+                continue
+            }
+
+            let nextKey = normalizedURLKey(candidateNextURL)
+            nextURL = visitedURLs.contains(nextKey) ? nil : candidateNextURL
+        }
+
+        guard let firstArticle = mergedArticles.first else {
+            throw ReadabilityError.noReadableContent
+        }
+        let merged = try mergeArticlePages(mergedArticles, primaryURL: url)
+
+        return Article(
+            url: merged.url,
+            title: merged.title,
+            byline: merged.byline,
+            excerpt: merged.excerpt,
+            contentHTML: merged.contentHTML,
+            textContent: merged.textContent,
+            leadImageURL: merged.leadImageURL,
+            nextPageURL: firstDetectedNextPageURL,
+            mergedPageURLs: mergedPageURLs.isEmpty ? [firstArticle.url] : mergedPageURLs
+        )
+    }
+
+    private func extractSinglePage(fromHTML html: String, url: URL) throws -> SinglePageExtractionResult {
         let trimmed = html.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw ReadabilityError.emptyHTML }
 
@@ -98,30 +166,32 @@ public struct ReadabilityExtractor: Sendable {
         let relaxedAttempt = ExtractionAttempt(removeUnlikelyCandidates: false, minimumTextLength: 40)
 
         do {
-            let strictArticle = try performExtraction(
+            let strictResult = try performExtraction(
                 fromHTML: trimmed,
                 url: url,
                 attempt: strictAttempt
             )
+            let strictArticle = strictResult.article
 
             // Progressive relaxation: only retry if strict output looks thin.
             if strictArticle.textContent.count >= 320 {
-                return strictArticle
+                return strictResult
             }
 
-            if let relaxedArticle = try? performExtraction(
+            if let relaxedResult = try? performExtraction(
                 fromHTML: trimmed,
                 url: url,
                 attempt: relaxedAttempt
             ) {
+                let relaxedArticle = relaxedResult.article
                 let strictQuality = articleQualityScore(strictArticle)
                 let relaxedQuality = articleQualityScore(relaxedArticle)
                 if relaxedQuality > strictQuality * 1.1 {
-                    return relaxedArticle
+                    return relaxedResult
                 }
             }
 
-            return strictArticle
+            return strictResult
         } catch {
             return try performExtraction(
                 fromHTML: trimmed,
@@ -135,7 +205,7 @@ public struct ReadabilityExtractor: Sendable {
         fromHTML html: String,
         url: URL,
         attempt: ExtractionAttempt
-    ) throws -> Article {
+    ) throws -> SinglePageExtractionResult {
         let doc = try SwiftSoup.parse(html, url.absoluteString)
         let metadata = try extractMetadata(doc: doc, fallbackURL: url)
         let matchingRules = options.enableDomainRules ? domainRuleRegistry.matchingRules(for: url) : []
@@ -205,6 +275,12 @@ public struct ReadabilityExtractor: Sendable {
             resolvedTitle: resolvedTitle,
             options: options
         )
+        let detectedNextPageURL = try nextPageDetector.detectNextPageURL(
+            in: doc,
+            contentRoot: contentRoot,
+            baseURL: url,
+            options: options
+        )
 
         var leadImageURL = try leadImageExtractor.extractLeadImageURL(
             doc: doc,
@@ -232,7 +308,7 @@ public struct ReadabilityExtractor: Sendable {
             throw ReadabilityError.noReadableContent
         }
 
-        return Article(
+        let article = Article(
             url: url,
             title: resolvedTitle,
             byline: domainMetadata.byline ?? metadata.byline,
@@ -243,8 +319,12 @@ public struct ReadabilityExtractor: Sendable {
             ),
             contentHTML: contentHTML,
             textContent: textContent,
-            leadImageURL: leadImageURL
+            leadImageURL: leadImageURL,
+            nextPageURL: detectedNextPageURL,
+            mergedPageURLs: [url]
         )
+
+        return SinglePageExtractionResult(article: article, nextPageURL: detectedNextPageURL)
     }
 
     // MARK: - Metadata
@@ -695,6 +775,109 @@ public struct ReadabilityExtractor: Sendable {
             current = node.parent()
         }
         return parts.reversed().joined(separator: "/")
+    }
+
+    private func mergeArticlePages(_ pages: [Article], primaryURL: URL) throws -> Article {
+        guard let first = pages.first else { throw ReadabilityError.noReadableContent }
+        guard pages.count > 1 else { return first }
+
+        let wrapper = Element(Tag(options.wrapInArticleTag ? "article" : "div"), primaryURL.absoluteString)
+        try wrapper.addClass("readableswift-article")
+        var seenBlocks = Set<String>()
+
+        for (index, page) in pages.enumerated() {
+            let fragment = try SwiftSoup.parseBodyFragment(page.contentHTML, primaryURL.absoluteString)
+            guard let body = fragment.body() else { continue }
+            let sourceRoot = body.children().first() ?? body
+
+            for child in sourceRoot.children().array() {
+                let blockText = try child.text().trimmingCharacters(in: .whitespacesAndNewlines)
+                if shouldSkipMergedBlockText(blockText, isFirstPage: index == 0, seenBlocks: &seenBlocks) {
+                    continue
+                }
+                try wrapper.appendChild(child.copy() as! Node)
+            }
+        }
+
+        let mergedHTML = try wrapper.outerHtml()
+        let mergedText = try wrapper.text()
+
+        return Article(
+            url: primaryURL,
+            title: first.title,
+            byline: first.byline,
+            excerpt: first.excerpt,
+            contentHTML: mergedHTML,
+            textContent: mergedText,
+            leadImageURL: first.leadImageURL,
+            nextPageURL: first.nextPageURL,
+            mergedPageURLs: pages.map(\.url)
+        )
+    }
+
+    private func shouldSkipMergedBlockText(
+        _ text: String,
+        isFirstPage: Bool,
+        seenBlocks: inout Set<String>
+    ) -> Bool {
+        let normalized = text
+            .lowercased()
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalized.isEmpty { return true }
+        if normalized.count < 40 { return false }
+
+        let key = normalized
+        if seenBlocks.contains(key) {
+            return !isFirstPage
+        }
+        seenBlocks.insert(key)
+        return false
+    }
+
+    private func isLikelyDuplicatePage(_ candidate: Article, comparedWith existingPages: [Article]) -> Bool {
+        let candidateText = normalizedSimilarityText(candidate.textContent)
+        guard !candidateText.isEmpty else { return true }
+
+        for existing in existingPages {
+            let existingText = normalizedSimilarityText(existing.textContent)
+            if existingText.isEmpty { continue }
+
+            if candidateText == existingText {
+                return true
+            }
+
+            let overlap = tokenJaccard(candidateText, existingText)
+            if overlap >= 0.92 {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private func normalizedSimilarityText(_ text: String) -> String {
+        text
+            .lowercased()
+            .replacingOccurrences(of: #"[^\p{L}\p{N}\s]+"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func tokenJaccard(_ lhs: String, _ rhs: String) -> Double {
+        let left = Set(lhs.split(separator: " ").map(String.init).filter { $0.count >= 2 })
+        let right = Set(rhs.split(separator: " ").map(String.init).filter { $0.count >= 2 })
+        if left.isEmpty && right.isEmpty { return 1.0 }
+        if left.isEmpty || right.isEmpty { return 0.0 }
+        let intersection = left.intersection(right).count
+        let union = left.union(right).count
+        return Double(intersection) / Double(union)
+    }
+
+    private func normalizedURLKey(_ url: URL) -> String {
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.fragment = nil
+        return components?.string?.lowercased() ?? url.absoluteString.lowercased()
     }
 
     private func articleQualityScore(_ article: Article) -> Double {

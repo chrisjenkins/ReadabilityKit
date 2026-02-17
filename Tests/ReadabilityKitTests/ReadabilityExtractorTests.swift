@@ -805,4 +805,122 @@ struct ReadabilityExtractorTests {
         #expect(!article.textContent.isEmpty)
     }
 
+    @Test("Merges paginated content when rel next is present")
+    func extractFromURL_mergesPaginatedPages() async throws {
+        let page1URL = URL(string: "https://example.com/story?page=1")!
+        let page2URL = URL(string: "https://example.com/story?page=2")!
+        let loader = StubURLLoader(
+            pages: [
+                page1URL.absoluteString: """
+                    <html><head><title>Paginated Story</title></head><body>
+                    <article class="content">
+                      <h1>Paginated Story</h1>
+                      <p>Part one introduces the subject with enough narrative detail to pass readability scoring.</p>
+                      <a rel="next" href="https://example.com/story?page=2">Next</a>
+                    </article>
+                    </body></html>
+                    """,
+                page2URL.absoluteString: """
+                    <html><head><title>Paginated Story</title></head><body>
+                    <article class="content">
+                      <p>Part two continues the same story with additional depth and concrete examples for readers.</p>
+                    </article>
+                    </body></html>
+                    """,
+            ]
+        )
+        let extractor = ReadabilityExtractor(
+            loader: loader,
+            options: .init(enablePaginationMerge: true, maxPaginationPages: 3, enableDomainRules: false)
+        )
+
+        let article = try await extractor.extract(from: page1URL)
+
+        #expect(article.textContent.contains("Part one introduces the subject"))
+        #expect(article.textContent.contains("Part two continues the same story"))
+        #expect(article.nextPageURL?.absoluteString == page2URL.absoluteString)
+        #expect(article.mergedPageURLs.count == 2)
+    }
+
+    @Test("Stops pagination merge on URL loops")
+    func extractFromURL_stopsPaginationLoops() async throws {
+        let page1URL = URL(string: "https://example.com/loop?page=1")!
+        let page2URL = URL(string: "https://example.com/loop?page=2")!
+        let loader = StubURLLoader(
+            pages: [
+                page1URL.absoluteString: """
+                    <html><body>
+                    <article class="content">
+                      <p>Loop page one contains substantial article text for extraction quality.</p>
+                      <a rel="next" href="https://example.com/loop?page=2">Next</a>
+                    </article>
+                    </body></html>
+                    """,
+                page2URL.absoluteString: """
+                    <html><body>
+                    <article class="content">
+                      <p>Loop page two adds more article text and points back to page one.</p>
+                      <a rel="next" href="https://example.com/loop?page=1">Next</a>
+                    </article>
+                    </body></html>
+                    """,
+            ]
+        )
+        let extractor = ReadabilityExtractor(
+            loader: loader,
+            options: .init(enablePaginationMerge: true, maxPaginationPages: 5, enableDomainRules: false)
+        )
+
+        let article = try await extractor.extract(from: page1URL)
+
+        #expect(article.textContent.contains("Loop page one contains substantial article text"))
+        #expect(article.textContent.contains("Loop page two adds more article text"))
+        #expect(article.mergedPageURLs.count == 2)
+    }
+
+    @Test("Does not follow next article links during pagination detection")
+    func extractFromURL_doesNotFollowNextArticleLinks() async throws {
+        let page1URL = URL(string: "https://example.com/main-story")!
+        let otherURL = URL(string: "https://example.com/other-story")!
+        let loader = StubURLLoader(
+            pages: [
+                page1URL.absoluteString: """
+                    <html><body>
+                    <article class="content">
+                      <p>Main story content provides enough text for successful extraction and should remain single-page.</p>
+                      <a href="https://example.com/other-story">Next article</a>
+                    </article>
+                    </body></html>
+                    """,
+                otherURL.absoluteString: """
+                    <html><body>
+                    <article class="content">
+                      <p>Other story text should never be merged into the first article.</p>
+                    </article>
+                    </body></html>
+                    """,
+            ]
+        )
+        let extractor = ReadabilityExtractor(
+            loader: loader,
+            options: .init(enablePaginationMerge: true, maxPaginationPages: 3, enableDomainRules: false)
+        )
+
+        let article = try await extractor.extract(from: page1URL)
+
+        #expect(article.textContent.contains("Main story content provides enough text"))
+        #expect(!article.textContent.contains("Other story text should never be merged"))
+        #expect(article.mergedPageURLs.count == 1)
+    }
+}
+
+private struct StubURLLoader: URLLoading {
+    let pages: [String: String]
+
+    func fetchHTML(url: URL) async throws -> String {
+        guard let html = pages[url.absoluteString] else {
+            throw ReadabilityError.invalidResponse
+        }
+        return html
+    }
 }

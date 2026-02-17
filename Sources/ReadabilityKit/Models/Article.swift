@@ -16,6 +16,8 @@ public struct Article: Sendable {
     public let contentHTML: String
     public let textContent: String
     public let leadImageURL: URL?
+    public let nextPageURL: URL?
+    public let mergedPageURLs: [URL]
 
     /// Creates an extracted article value from parsed readability output.
     /// - Parameters:
@@ -26,6 +28,8 @@ public struct Article: Sendable {
     ///   - contentHTML: Cleaned article HTML body.
     ///   - textContent: Plain-text representation of `contentHTML`.
     ///   - leadImageURL: Lead image URL resolved from metadata or content heuristics.
+    ///   - nextPageURL: Detected next page URL for paginated articles.
+    ///   - mergedPageURLs: URLs that were merged into this article result.
     public init(
         url: URL,
         title: String,
@@ -33,7 +37,9 @@ public struct Article: Sendable {
         excerpt: String?,
         contentHTML: String,
         textContent: String,
-        leadImageURL: URL?
+        leadImageURL: URL?,
+        nextPageURL: URL? = nil,
+        mergedPageURLs: [URL] = []
     ) {
         self.url = url
         self.title = title
@@ -42,5 +48,7 @@ public struct Article: Sendable {
         self.contentHTML = contentHTML
         self.textContent = textContent
         self.leadImageURL = leadImageURL
+        self.nextPageURL = nextPageURL
+        self.mergedPageURLs = mergedPageURLs
     }
 }

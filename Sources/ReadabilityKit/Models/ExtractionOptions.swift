@@ -31,6 +31,10 @@ public struct ExtractionOptions: Sendable {
     public var clusterMaxRankGap: Int
     public var clusterMaxDepthDelta: Int
     public var clusterMinTokenJaccard: Double
+    public var enablePaginationMerge: Bool
+    public var maxPaginationPages: Int
+    public var maxPaginationDistanceFromRoot: Int
+    public var minNextPageConfidence: Double
 
     public var enableDomainRules: Bool
     public var domainRuleMode: DomainRuleMode
@@ -50,6 +54,10 @@ public struct ExtractionOptions: Sendable {
     ///   - clusterMaxRankGap: Max document-order distance allowed when clustering nodes.
     ///   - clusterMaxDepthDelta: Max DOM depth difference allowed when clustering nodes.
     ///   - clusterMinTokenJaccard: Minimum class/id token overlap used for compatibility.
+    ///   - enablePaginationMerge: Enables optional multi-page extraction for paginated articles.
+    ///   - maxPaginationPages: Maximum number of total pages (including the first page) to merge.
+    ///   - maxPaginationDistanceFromRoot: Maximum ancestor distance from content root for next-page links.
+    ///   - minNextPageConfidence: Minimum confidence required to follow a detected next-page link.
     ///   - enableDomainRules: Enables domain-specific extraction rule matching when true.
     ///   - domainRuleMode: Controls whether domain rules are hints only or preferred roots.
     public init(
@@ -66,6 +74,10 @@ public struct ExtractionOptions: Sendable {
         clusterMaxRankGap: Int = 20,
         clusterMaxDepthDelta: Int = 3,
         clusterMinTokenJaccard: Double = 0.18,
+        enablePaginationMerge: Bool = false,
+        maxPaginationPages: Int = 3,
+        maxPaginationDistanceFromRoot: Int = 2,
+        minNextPageConfidence: Double = 0.6,
         enableDomainRules: Bool = true,
         domainRuleMode: DomainRuleMode = .rulesAsHints
     ) {
@@ -83,6 +95,10 @@ public struct ExtractionOptions: Sendable {
         self.clusterMaxRankGap = clusterMaxRankGap
         self.clusterMaxDepthDelta = clusterMaxDepthDelta
         self.clusterMinTokenJaccard = clusterMinTokenJaccard
+        self.enablePaginationMerge = enablePaginationMerge
+        self.maxPaginationPages = max(1, maxPaginationPages)
+        self.maxPaginationDistanceFromRoot = max(0, maxPaginationDistanceFromRoot)
+        self.minNextPageConfidence = max(0.0, min(1.0, minNextPageConfidence))
 
         self.enableDomainRules = enableDomainRules
         self.domainRuleMode = domainRuleMode
