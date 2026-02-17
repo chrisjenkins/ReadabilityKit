@@ -687,6 +687,41 @@ struct ReadabilityExtractorTests {
         #expect(article.contentHTML.contains("<p"))
     }
 
+    @Test("Parses included BBC News fixture HTML")
+    func extractFromHTML_bbcNewsFixture_parsesCorrectly() throws {
+        let fixtureURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("Resources")
+            .appendingPathComponent("bbc-news.html")
+        let html = try String(contentsOf: fixtureURL, encoding: .utf8)
+
+        let extractor = ReadabilityExtractor()
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://www.bbc.co.uk/news/articles/cn0zjw5pz48o")!)
+
+        #expect(article.title.contains("Cabinet secretary frontrunner"))
+        #expect(article.byline?.contains("Chris Mason") == true)
+        #expect(article.textContent.contains("As the UK's consul general between 2016 and 2017"))
+        #expect(!article.textContent.contains("Top stories"))
+    }
+
+    @Test("Parses included Apple fixture HTML")
+    func extractFromHTML_appleFixture_parsesCorrectly() throws {
+        let fixtureURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("Resources")
+            .appendingPathComponent("apple.html")
+        let html = try String(contentsOf: fixtureURL, encoding: .utf8)
+
+        let extractor = ReadabilityExtractor()
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://support.apple.com/guide/iphone/force-restart-iphone-iph8903c3ee6/ios")!)
+
+        #expect(article.title.contains("Force restart iPhone"))
+        #expect(article.textContent.contains("Press and quickly release the volume up button."))
+        #expect(article.textContent.contains("If iPhone doesn’t restart after you try these steps"))
+        #expect(!article.textContent.contains("Install Background Security Improvements"))
+        #expect(!article.textContent.contains("Table of Contents"))
+    }
+
     @Test("Falls back to JSON-LD metadata when OG/meta tags are missing")
     func extractFromHTML_jsonLDFallbackMetadata() throws {
         let html = """
