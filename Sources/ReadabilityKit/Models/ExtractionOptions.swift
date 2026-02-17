@@ -7,6 +7,14 @@
 
 import Foundation
 
+/// Controls how domain-specific extraction rules influence article extraction.
+public enum DomainRuleMode: Sendable {
+    /// Domain rules contribute candidate score and metadata hints only.
+    case rulesAsHints
+    /// Domain rules may provide a preferred content root before generic scoring.
+    case preferRules
+}
+
 /// Configures extraction heuristics and content-preservation behavior.
 public struct ExtractionOptions: Sendable {
     public var preserveHTML: Bool
@@ -21,6 +29,9 @@ public struct ExtractionOptions: Sendable {
     public var clusterMaxDepthDelta: Int
     public var clusterMinTokenJaccard: Double
 
+    public var enableDomainRules: Bool
+    public var domainRuleMode: DomainRuleMode
+
     /// Creates extraction options that tune parsing, cleaning, and cluster selection.
     /// - Parameters:
     ///   - preserveHTML: Keeps HTML output fidelity when true.
@@ -33,6 +44,8 @@ public struct ExtractionOptions: Sendable {
     ///   - clusterMaxRankGap: Max document-order distance allowed when clustering nodes.
     ///   - clusterMaxDepthDelta: Max DOM depth difference allowed when clustering nodes.
     ///   - clusterMinTokenJaccard: Minimum class/id token overlap used for compatibility.
+    ///   - enableDomainRules: Enables domain-specific extraction rule matching when true.
+    ///   - domainRuleMode: Controls whether domain rules are hints only or preferred roots.
     public init(
         preserveHTML: Bool = true,
         keepIframes: Bool = false,
@@ -43,7 +56,9 @@ public struct ExtractionOptions: Sendable {
         clusterTopN: Int = 12,
         clusterMaxRankGap: Int = 20,
         clusterMaxDepthDelta: Int = 3,
-        clusterMinTokenJaccard: Double = 0.18
+        clusterMinTokenJaccard: Double = 0.18,
+        enableDomainRules: Bool = true,
+        domainRuleMode: DomainRuleMode = .rulesAsHints
     ) {
         self.preserveHTML = preserveHTML
         self.keepIframes = keepIframes
@@ -56,5 +71,8 @@ public struct ExtractionOptions: Sendable {
         self.clusterMaxRankGap = clusterMaxRankGap
         self.clusterMaxDepthDelta = clusterMaxDepthDelta
         self.clusterMinTokenJaccard = clusterMinTokenJaccard
+
+        self.enableDomainRules = enableDomainRules
+        self.domainRuleMode = domainRuleMode
     }
 }

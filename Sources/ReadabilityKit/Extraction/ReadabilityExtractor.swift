@@ -48,6 +48,7 @@ public struct ReadabilityExtractor: Sendable {
     private let stripEmptyParagraphsPass = StripEmptyParagraphsPass()
     private let unwrapRedundantSpansAndDivsPass = UnwrapRedundantSpansAndDivsPass()
     private let leadImageExtractor = LeadImageExtractor()
+    private let domainRuleRegistry = DomainRuleRegistry.default
 
     /// Creates an extractor with a pluggable HTML loader and parsing options.
     /// - Parameters:
@@ -134,32 +135,55 @@ public struct ReadabilityExtractor: Sendable {
     ) throws -> Article {
         let doc = try SwiftSoup.parse(html, url.absoluteString)
         let metadata = try extractMetadata(doc: doc, fallbackURL: url)
+        let matchingRules = options.enableDomainRules ? domainRuleRegistry.matchingRules(for: url) : []
+        let domainMetadata = try mergedDomainMetadataOverrides(
+            rules: matchingRules,
+            doc: doc,
+            fallbackURL: url
+        )
 
         try removeScriptsStylesAndUnsafePass.apply(to: doc, options: options)
         try normalizeBreaksPass.apply(to: doc, options: options)
-        if attempt.removeUnlikelyCandidates {
+        let preferredDomainRoot = (options.domainRuleMode == .preferRules)
+            ? try preferredDomainContentRoot(rules: matchingRules, doc: doc)
+            : nil
+        if attempt.removeUnlikelyCandidates && preferredDomainRoot == nil {
             try removeUnlikelyCandidatesPass.apply(to: doc, options: options)
         }
         guard let body = doc.body() else { throw ReadabilityError.parseFailed }
 
-        let candidates = try collectCandidates(in: body)
-        guard let topCandidate = candidates.max(by: { $0.score < $1.score }) else {
-            throw ReadabilityError.noReadableContent
-        }
-
         let contentRoot: Element
-        if options.enableClustering {
-            contentRoot = try clusteringEngine.mergeBestCluster(
-                candidates: candidates,
-                baseUri: body.getBaseUri(),
-                options: options
-            )
-        } else {
-            contentRoot = try wrapSingleWithSiblingInclusion(
-                best: topCandidate,
-                allCandidates: candidates,
+        if let preferredDomainRoot {
+            contentRoot = try wrapPreferredContentRoot(
+                preferredDomainRoot,
                 baseUri: body.getBaseUri()
             )
+        } else {
+            let candidateAdjustments = try domainCandidateScoreAdjustments(
+                rules: matchingRules,
+                doc: doc
+            )
+            let candidates = try collectCandidates(
+                in: body,
+                candidateAdjustments: candidateAdjustments
+            )
+            guard let topCandidate = candidates.max(by: { $0.score < $1.score }) else {
+                throw ReadabilityError.noReadableContent
+            }
+
+            if options.enableClustering {
+                contentRoot = try clusteringEngine.mergeBestCluster(
+                    candidates: candidates,
+                    baseUri: body.getBaseUri(),
+                    options: options
+                )
+            } else {
+                contentRoot = try wrapSingleWithSiblingInclusion(
+                    best: topCandidate,
+                    allCandidates: candidates,
+                    baseUri: body.getBaseUri()
+                )
+            }
         }
 
         // Fidelity cleaning pipeline
@@ -176,7 +200,7 @@ public struct ReadabilityExtractor: Sendable {
             fallbackURL: url
         )
         if leadImageURL == nil {
-            leadImageURL = metadata.jsonLDLeadImageURL
+            leadImageURL = domainMetadata.leadImageURL ?? metadata.jsonLDLeadImageURL
         }
 
         #if DEBUG
@@ -198,9 +222,13 @@ public struct ReadabilityExtractor: Sendable {
 
         return Article(
             url: url,
-            title: metadata.title,
-            byline: metadata.byline,
-            excerpt: (metadata.excerpt?.isEmpty == false ? metadata.excerpt : makeExcerpt(from: textContent)),
+            title: domainMetadata.title ?? metadata.title,
+            byline: domainMetadata.byline ?? metadata.byline,
+            excerpt: (
+                (domainMetadata.excerpt ?? metadata.excerpt)?.isEmpty == false
+                    ? (domainMetadata.excerpt ?? metadata.excerpt)
+                    : makeExcerpt(from: textContent)
+            ),
             contentHTML: contentHTML,
             textContent: textContent,
             leadImageURL: leadImageURL
@@ -392,9 +420,57 @@ public struct ReadabilityExtractor: Sendable {
         return URL(string: cleaned, relativeTo: fallbackURL)?.absoluteURL
     }
 
+    private func preferredDomainContentRoot(
+        rules: [any DomainExtractionRule],
+        doc: Document
+    ) throws -> Element? {
+        guard !rules.isEmpty else { return nil }
+        for rule in rules {
+            if let preferred = try rule.preferredContentRoot(in: doc) {
+                return preferred
+            }
+        }
+        return nil
+    }
+
+    private func domainCandidateScoreAdjustments(
+        rules: [any DomainExtractionRule],
+        doc: Document
+    ) throws -> [DomainCandidateAdjustment] {
+        guard !rules.isEmpty else { return [] }
+        var out: [DomainCandidateAdjustment] = []
+        for rule in rules {
+            out.append(contentsOf: try rule.candidateScoreAdjustments(in: doc))
+        }
+        return out
+    }
+
+    private func mergedDomainMetadataOverrides(
+        rules: [any DomainExtractionRule],
+        doc: Document,
+        fallbackURL: URL
+    ) throws -> DomainMetadataOverride {
+        guard !rules.isEmpty else { return .empty }
+
+        var merged = DomainMetadataOverride.empty
+        for rule in rules {
+            let override = try rule.metadataOverrides(in: doc, fallbackURL: fallbackURL)
+            merged = DomainMetadataOverride(
+                title: merged.title ?? override.title,
+                byline: merged.byline ?? override.byline,
+                excerpt: merged.excerpt ?? override.excerpt,
+                leadImageURL: merged.leadImageURL ?? override.leadImageURL
+            )
+        }
+        return merged
+    }
+
     // MARK: - Candidate collection (Readability + Density + Propagation)
 
-    private func collectCandidates(in body: Element) throws -> [ClusteringCandidate] {
+    private func collectCandidates(
+        in body: Element,
+        candidateAdjustments: [DomainCandidateAdjustment]
+    ) throws -> [ClusteringCandidate] {
         var scoreByPath: [String: Double] = [:]
         var elementByPath: [String: Element] = [:]
 
@@ -448,6 +524,12 @@ public struct ReadabilityExtractor: Sendable {
             elementByPath[nodePath] = el
         }
 
+        for adjustment in candidateAdjustments where adjustment.scoreDelta != 0 {
+            let nodePath = domPath(for: adjustment.element)
+            scoreByPath[nodePath, default: 0] += adjustment.scoreDelta
+            elementByPath[nodePath] = adjustment.element
+        }
+
         try applySiblingCandidateBoost(
             scoreByPath: &scoreByPath,
             elementByPath: &elementByPath
@@ -496,6 +578,13 @@ public struct ReadabilityExtractor: Sendable {
             }
         }
 
+        return wrapper
+    }
+
+    private func wrapPreferredContentRoot(_ root: Element, baseUri: String) throws -> Element {
+        let wrapper = Element(Tag(options.wrapInArticleTag ? "article" : "div"), baseUri)
+        try wrapper.addClass("readableswift-article")
+        try wrapper.appendChild(root.copy() as! Node)
         return wrapper
     }
 

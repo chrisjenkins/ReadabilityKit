@@ -613,4 +613,36 @@ struct ReadabilityExtractorTests {
         #expect(article.textContent.contains("Transport planners say capacity constraints"))
     }
 
+    @Test("Uses preferred domain rule root for BBC fixture to reduce chrome")
+    func extractFromHTML_bbcFixture_preferDomainRules() throws {
+        let fixtureURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("Resources")
+            .appendingPathComponent("bbc.html")
+        let html = try String(contentsOf: fixtureURL, encoding: .utf8)
+
+        let extractor = ReadabilityExtractor(
+            options: .init(enableDomainRules: true, domainRuleMode: .preferRules)
+        )
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://www.bbc.com/news/articles/c70ne31d884o")!)
+
+        #expect(article.textContent.contains("The government has abandoned plans to delay 30 council elections in England"))
+        #expect(!article.textContent.contains("Skip to content"))
+    }
+
+    @Test("Can disable domain rules and still extract BBC fixture")
+    func extractFromHTML_bbcFixture_domainRulesDisabled() throws {
+        let fixtureURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("Resources")
+            .appendingPathComponent("bbc.html")
+        let html = try String(contentsOf: fixtureURL, encoding: .utf8)
+
+        let extractor = ReadabilityExtractor(options: .init(enableDomainRules: false))
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://www.bbc.com/news/articles/c70ne31d884o")!)
+
+        #expect(article.title.contains("Government abandons plans to delay 30 council elections"))
+        #expect(!article.textContent.isEmpty)
+    }
+
 }
