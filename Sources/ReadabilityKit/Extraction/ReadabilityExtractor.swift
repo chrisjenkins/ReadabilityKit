@@ -42,6 +42,7 @@ public struct ReadabilityExtractor: Sendable {
     private let clusteringEngine = ClusteringEngine()
     private let paragraphScorer = ParagraphScorer()
     private let classWeightScorer = ClassWeightScorer()
+    private let fixedChromeScorer = FixedChromeScorer()
     private let linkDensityScorer = LinkDensityScorer()
     private let visibilityFilter = VisibilityFilter()
     private let removeScriptsStylesAndUnsafePass = RemoveScriptsStylesAndUnsafePass()
@@ -597,12 +598,15 @@ public struct ReadabilityExtractor: Sendable {
 
                 let nodePath = domPath(for: node)
                 let classWeight = try classWeightScorer.score(node)
+                let fixedChromePenalty = options.penalizeFixedChrome ? try fixedChromeScorer.score(node) : 0
                 let ld = try linkDensityScorer.score(node)
                 let density = try DensityScoring.score(element: node)
 
                 // Combined score: classic + density
                 let combined = paragraphScore * 0.6 + density * 0.4
-                let inc = (combined / level) * (1.0 - min(0.85, ld)) + (classWeight / (level == 1.0 ? 2.0 : 4.0))
+                let inc = (combined / level) * (1.0 - min(0.85, ld))
+                    + (classWeight / (level == 1.0 ? 2.0 : 4.0))
+                    + (fixedChromePenalty / (level == 1.0 ? 3.0 : 6.0))
 
                 scoreByPath[nodePath, default: 0] += inc
                 elementByPath[nodePath] = node
@@ -621,9 +625,10 @@ public struct ReadabilityExtractor: Sendable {
 
             let nodePath = domPath(for: el)
             let classWeight = try classWeightScorer.score(el)
+            let fixedChromePenalty = options.penalizeFixedChrome ? try fixedChromeScorer.score(el) : 0
             let ld = try linkDensityScorer.score(el)
 
-            let inc = (density * (1.0 - min(0.85, ld))) + classWeight * 0.25
+            let inc = (density * (1.0 - min(0.85, ld))) + classWeight * 0.25 + fixedChromePenalty * 0.5
             scoreByPath[nodePath, default: 0] += inc
             elementByPath[nodePath] = el
         }
