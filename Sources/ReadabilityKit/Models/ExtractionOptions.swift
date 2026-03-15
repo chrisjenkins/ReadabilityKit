@@ -25,6 +25,8 @@ public struct ExtractionOptions: Sendable {
     public var filterHiddenNodes: Bool
     public var dedupeTitleHeaders: Bool
     public var dropPreambleHeadersBeforeFirstParagraph: Bool
+    public var removeDecorativeImages: Bool
+    public var decorativeImageRemovalThreshold: Int
 
     public var enableClustering: Bool
     public var clusterTopN: Int
@@ -49,6 +51,8 @@ public struct ExtractionOptions: Sendable {
     ///   - filterHiddenNodes: Removes hidden or aria-hidden DOM regions and skips them during scoring.
     ///   - dedupeTitleHeaders: Removes in-body header nodes that duplicate the resolved article title.
     ///   - dropPreambleHeadersBeforeFirstParagraph: Removes preamble headers before first body paragraph.
+    ///   - removeDecorativeImages: Removes decorative or navigational images from extracted content.
+    ///   - decorativeImageRemovalThreshold: Minimum heuristic score required to drop an image as decorative.
     ///   - enableClustering: Enables multi-node clustering instead of single best-node selection.
     ///   - clusterTopN: Maximum top-scoring nodes considered for cluster merge.
     ///   - clusterMaxRankGap: Max document-order distance allowed when clustering nodes.
@@ -69,6 +73,8 @@ public struct ExtractionOptions: Sendable {
         filterHiddenNodes: Bool = true,
         dedupeTitleHeaders: Bool = true,
         dropPreambleHeadersBeforeFirstParagraph: Bool = true,
+        removeDecorativeImages: Bool = true,
+        decorativeImageRemovalThreshold: Int = 45,
         enableClustering: Bool = true,
         clusterTopN: Int = 12,
         clusterMaxRankGap: Int = 20,
@@ -89,6 +95,8 @@ public struct ExtractionOptions: Sendable {
         self.filterHiddenNodes = filterHiddenNodes
         self.dedupeTitleHeaders = dedupeTitleHeaders
         self.dropPreambleHeadersBeforeFirstParagraph = dropPreambleHeadersBeforeFirstParagraph
+        self.removeDecorativeImages = removeDecorativeImages
+        self.decorativeImageRemovalThreshold = decorativeImageRemovalThreshold
 
         self.enableClustering = enableClustering
         self.clusterTopN = clusterTopN
