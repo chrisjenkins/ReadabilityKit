@@ -50,6 +50,7 @@ public struct ReadabilityExtractor: Sendable {
     private let removeUnlikelyCandidatesPass = RemoveUnlikelyCandidatesPass()
     private let removeFormsButtonsEtcPass = RemoveFormsButtonsEtcPass()
     private let removeLikelyJunkBlocksPass = RemoveLikelyJunkBlocksPass()
+    private let pruneTerminalContentSectionsPass = PruneTerminalContentSectionsPass()
     private let fixLazyMediaPass = FixLazyMediaPass()
     private let decorativeImageCleaningPass = DecorativeImageCleaningPass()
     private let cleanTablesPass = CleanTablesPass()
@@ -266,6 +267,7 @@ public struct ReadabilityExtractor: Sendable {
         // Fidelity cleaning pipeline
         try removeFormsButtonsEtcPass.apply(to: contentRoot, options: options)
         try removeLikelyJunkBlocksPass.apply(to: contentRoot, options: options)
+        try pruneTerminalContentSectionsPass.apply(to: contentRoot, options: options)
         try fixLazyMediaPass.apply(to: contentRoot, options: options)
         try decorativeImageCleaningPass.apply(to: contentRoot, options: options)
         try cleanTablesPass.apply(to: contentRoot, options: options)
@@ -708,6 +710,10 @@ public struct ReadabilityExtractor: Sendable {
             if !isVisible { return false }
         }
 
+        if shouldRejectSiblingAsTerminalModule(sibling) {
+            return false
+        }
+
         let path = domPath(for: sibling)
         if let knownScore = scoreByPath[path], knownScore >= inclusionThreshold {
             return true
@@ -726,6 +732,66 @@ public struct ReadabilityExtractor: Sendable {
         }
 
         return textLength >= 180 && linkDensity < 0.33 && classWeight > -20
+    }
+
+    private func shouldRejectSiblingAsTerminalModule(_ element: Element) -> Bool {
+        let negativeHeadingPhrases = [
+            "comments",
+            "top comments",
+            "top rated comments",
+            "related stories",
+            "related articles",
+            "recommended",
+            "recommended stories",
+            "more stories",
+            "other stories",
+            "popular stories",
+            "latest stories",
+            "next article",
+            "more from",
+        ]
+
+        let elementID = element.id()
+        let elementClassName = (try? element.className()) ?? ""
+        let idClass = (elementID + " " + elementClassName).lowercased()
+        let headingText = ((try? element.select("h1, h2, h3, h4, h5, h6").first()?.text()) ?? "")
+            .lowercased()
+            .replacingOccurrences(of: "\u{00A0}", with: " ")
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let hasNegativeHeading = negativeHeadingPhrases.contains(where: { headingText.contains($0) })
+        let hasNegativeToken = idClass.contains("comment")
+            || idClass.contains("related")
+            || idClass.contains("recommend")
+            || idClass.contains("popular")
+            || idClass.contains("sidebar")
+
+        guard hasNegativeHeading || hasNegativeToken else { return false }
+
+        let normalizedText = ((try? element.text()) ?? "")
+            .lowercased()
+            .replacingOccurrences(of: "\u{00A0}", with: " ")
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let links = (try? element.select("a[href]").count) ?? 0
+        let paragraphs = (try? element.select("p").count) ?? 0
+        let images = (try? element.select("img").count) ?? 0
+        let childBlocks = element.children().count
+        let linkDensity = normalizedText.isEmpty
+            ? 1.0
+            : min(1.0, Double(links * 40) / Double(max(normalizedText.count, 1)))
+
+        let looksLikeCommentModule =
+            normalizedText.contains("read all comments")
+            || (normalizedText.contains("score:") && normalizedText.contains("votes"))
+        let looksLikeStoryRail =
+            normalizedText.contains("read full article")
+            || linkDensity >= 0.35
+            || (images >= 2 && childBlocks >= 2)
+            || (paragraphs <= 2 && childBlocks >= 3 && links >= 3)
+
+        return looksLikeCommentModule || looksLikeStoryRail
     }
 
     private func applySiblingCandidateBoost(

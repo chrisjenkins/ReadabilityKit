@@ -119,6 +119,62 @@ struct ReadabilityExtractorTests {
         #expect(!article.textContent.lowercased().contains("comments"))
     }
 
+    @Test("Prunes terminal recommendation and comment sections from extracted root")
+    func extractFromHTML_prunesTerminalContentSections() throws {
+        let html = """
+            <html>
+              <head>
+                <title>Example Magazine</title>
+              </head>
+              <body>
+                <main class="content-root">
+                  <div class="story-body article content">
+                    <h1>iOS 27 Will Reportedly Be Like Mac OS X Snow Leopard</h1>
+                    <p>In his newsletter today, a reporter reiterated that the next major release will prioritize performance and stability improvements over headline-grabbing features.</p>
+                    <p>Apple has used this strategy before, focusing a full cycle on bug fixes, responsiveness, and reliability after a broader redesign effort.</p>
+                    <p>The update is still expected to include a smaller set of additions, but the central theme is refinement rather than expansion.</p>
+                  </div>
+
+                  <section data-track="popular-stories">
+                    <h2>Popular Stories</h2>
+                    <div class="card">
+                      <a href="/story-1">Apple Released Seven New Products Today</a>
+                      <p>Read Full Article</p>
+                    </div>
+                    <div class="card">
+                      <a href="/story-2">10+ New Features Coming in iOS 27</a>
+                      <p>Read Full Article</p>
+                    </div>
+                    <div class="card">
+                      <a href="/story-3">Another teaser story</a>
+                      <p>Read Full Article</p>
+                    </div>
+                  </section>
+
+                  <section id="comments">
+                    <h2>Top Rated Comments</h2>
+                    <div class="comment">
+                      <p>I hope for the same focus on macOS 27</p>
+                      <p>Score: 72 Votes</p>
+                    </div>
+                    <a href="/comments">Read All Comments</a>
+                  </section>
+                </main>
+              </body>
+            </html>
+            """
+
+        let extractor = ReadabilityExtractor(options: .init(enableClustering: true))
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://example.com/post")!)
+
+        #expect(article.textContent.contains("prioritize performance and stability"))
+        #expect(article.textContent.contains("central theme is refinement rather than expansion"))
+        #expect(!article.textContent.contains("Popular Stories"))
+        #expect(!article.textContent.contains("Apple Released Seven New Products Today"))
+        #expect(!article.textContent.contains("Top Rated Comments"))
+        #expect(!article.textContent.contains("Score: 72 Votes"))
+    }
+
     @Test("Repairs lazy media, unwraps layout tables, and removes newsletter blocks")
     func extractFromHTML_blogWithLazyMediaAndLayoutTable_repairsMediaAndDropsNewsletter() throws {
         let html = """
@@ -974,6 +1030,48 @@ struct ReadabilityExtractorTests {
 
         #expect(article.textContent.contains("This standfirst introduces the story context"))
         #expect(article.textContent.contains("The main body covers architectural changes"))
+    }
+
+    @Test("Single-candidate mode rejects trailing terminal modules during sibling inclusion")
+    func extractFromHTML_singleModeRejectsTerminalModules() throws {
+        let html = """
+            <html>
+              <head><title>Sibling Boundary</title></head>
+              <body>
+                <p class="standfirst">This standfirst summarizes the release strategy and should remain attached to the article in single-candidate mode.</p>
+
+                <div class="article-content">
+                  <h1>Refinement Release Strategy</h1>
+                  <p>The main article explains why the next cycle prioritizes reliability, stability, and polish after a broader redesign effort.</p>
+                  <p>It also covers how teams are reducing regressions, shrinking defect backlogs, and tightening rollout quality gates.</p>
+                </div>
+
+                <section data-track="popular-stories">
+                  <h2>Popular Stories</h2>
+                  <div class="card">
+                    <a href="/story-1">Apple Released Seven New Products Today</a>
+                    <p>Read Full Article</p>
+                  </div>
+                  <div class="card">
+                    <a href="/story-2">10+ New Features Coming in iOS 27</a>
+                    <p>Read Full Article</p>
+                  </div>
+                  <div class="card">
+                    <a href="/story-3">Another teaser story</a>
+                    <p>Read Full Article</p>
+                  </div>
+                </section>
+              </body>
+            </html>
+            """
+
+        let extractor = ReadabilityExtractor(options: .init(enableClustering: false))
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://example.com/sibling-boundary")!)
+
+        #expect(article.textContent.contains("This standfirst summarizes the release strategy"))
+        #expect(article.textContent.contains("The main article explains why the next cycle prioritizes reliability"))
+        #expect(!article.textContent.contains("Popular Stories"))
+        #expect(!article.textContent.contains("Apple Released Seven New Products Today"))
     }
 
     @Test("Retries with relaxed pruning when strict unlikely-candidate removal drops real content")
