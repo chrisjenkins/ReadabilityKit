@@ -341,6 +341,196 @@ struct ReadabilityExtractorTests {
         #expect(article.contentHTML.contains("visible.jpg"))
     }
 
+    @Test("Removes repeated decorative list bullets and share icons")
+    func extractFromHTML_removesDecorativeRepeatedImages() throws {
+        let html = """
+            <html>
+              <head><title>Decorative Images</title></head>
+              <body>
+                <article class="story-body">
+                  <h1>Decorative Image Cleanup</h1>
+                  <p>This article includes some repeated interface images that should not survive extraction into readable content.</p>
+                  <p>The body also contains enough additional text to ensure the article is selected correctly.</p>
+
+                  <ul class="feature-list">
+                    <li><img src="https://cdn.example.com/bullet.png" width="16" height="16" alt="">First substantial list item with real text.</li>
+                    <li><img src="https://cdn.example.com/bullet.png" width="16" height="16" alt="">Second substantial list item with more real text.</li>
+                    <li><img src="https://cdn.example.com/bullet.png" width="16" height="16" alt="">Third substantial list item with more real text.</li>
+                  </ul>
+
+                  <div class="share-tools">
+                    <a href="https://x.example.com/share"><img src="https://cdn.example.com/share-x.svg" width="24" height="24" alt="Share on X"></a>
+                    <a href="https://facebook.example.com/share"><img src="https://cdn.example.com/share-facebook.svg" width="24" height="24" alt="Share on Facebook"></a>
+                  </div>
+                </article>
+              </body>
+            </html>
+            """
+
+        let extractor = ReadabilityExtractor()
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://example.com/decorative")!)
+
+        #expect(article.textContent.contains("First substantial list item"))
+        #expect(!article.contentHTML.contains("bullet.png"))
+        #expect(!article.contentHTML.contains("share-x.svg"))
+        #expect(!article.contentHTML.contains("share-facebook.svg"))
+    }
+
+    @Test("Removes spacer and divider images but keeps informative figure image")
+    func extractFromHTML_removesDecorativeImagesAndKeepsCaptionedFigure() throws {
+        let html = """
+            <html>
+              <head><title>Captioned Figure</title></head>
+              <body>
+                <article class="story-body">
+                  <h1>Captioned Figure Story</h1>
+                  <p>This opening paragraph gives the extractor enough narrative text to identify the article content correctly.</p>
+                  <img src="https://cdn.example.com/spacer.gif" width="1" height="1" alt="">
+                  <img src="https://cdn.example.com/divider.png" width="600" height="6" alt="">
+                  <figure>
+                    <img src="https://cdn.example.com/informative-photo.jpg" width="1200" height="800" alt="Survey team measuring the river bank after the storm">
+                    <figcaption>Survey team measuring the river bank after the storm.</figcaption>
+                  </figure>
+                  <p>Follow-up text confirms the story continues after the figure and should remain readable.</p>
+                </article>
+              </body>
+            </html>
+            """
+
+        let extractor = ReadabilityExtractor()
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://example.com/captioned-figure")!)
+
+        #expect(!article.contentHTML.contains("spacer.gif"))
+        #expect(!article.contentHTML.contains("divider.png"))
+        #expect(article.contentHTML.contains("informative-photo.jpg"))
+        #expect(article.contentHTML.contains("figcaption"))
+    }
+
+    @Test("Keeps image with nearby caption-like text")
+    func extractFromHTML_keepsImageWithNearbyCaptionText() throws {
+        let html = """
+            <html>
+              <head><title>Nearby Caption</title></head>
+              <body>
+                <article class="article-content">
+                  <h1>Nearby Caption Example</h1>
+                  <p>This article contains a medium-sized image followed by a nearby caption block that carries real information.</p>
+                  <div class="media-block">
+                    <img src="https://cdn.example.com/chart.png" width="320" height="220" alt="Chart showing weekly river level changes">
+                    <p class="image-caption">Chart: weekly river levels rose sharply after upstream flooding.</p>
+                  </div>
+                  <p>Additional paragraph text keeps the article substantial and allows preservation heuristics to be exercised.</p>
+                </article>
+              </body>
+            </html>
+            """
+
+        let extractor = ReadabilityExtractor()
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://example.com/nearby-caption")!)
+
+        #expect(article.contentHTML.contains("chart.png"))
+        #expect(article.contentHTML.contains("image-caption"))
+    }
+
+    @Test("Can disable decorative image cleanup")
+    func extractFromHTML_canDisableDecorativeImageCleanup() throws {
+        let html = """
+            <html>
+              <head><title>Decorative Toggle</title></head>
+              <body>
+                <article>
+                  <h1>Decorative Toggle</h1>
+                  <p>This article is long enough to pass extraction while validating the decorative image option toggle.</p>
+                  <p>Additional supporting text ensures the content block is robust enough for readability scoring.</p>
+                  <img src="https://cdn.example.com/bullet.png" width="16" height="16" alt="">
+                </article>
+              </body>
+            </html>
+            """
+
+        let extractor = ReadabilityExtractor(options: .init(removeDecorativeImages: false))
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://example.com/decorative-toggle")!)
+
+        #expect(article.contentHTML.contains("bullet.png"))
+    }
+
+    @Test("Removes tiny standalone icon images from article content")
+    func extractFromHTML_removesTinyStandaloneIcons() throws {
+        let html = """
+            <html>
+              <head><title>Tiny Icons</title></head>
+              <body>
+                <article class="story-body">
+                  <h1>Tiny Icons</h1>
+                  <p>This article has enough text to pass extraction while testing whether very small standalone images are removed.</p>
+                  <p>Another paragraph provides additional narrative so the content root remains stable for the cleaner.</p>
+                  <img src="https://cdn.example.com/icon-comment.png" width="18" height="18" alt="Comment">
+                  <img src="https://cdn.example.com/icon-bookmark.png" width="24" height="24" alt="Bookmark">
+                </article>
+              </body>
+            </html>
+            """
+
+        let extractor = ReadabilityExtractor()
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://example.com/tiny-icons")!)
+
+        #expect(!article.contentHTML.contains("icon-comment.png"))
+        #expect(!article.contentHTML.contains("icon-bookmark.png"))
+    }
+
+    @Test("Removes repeated small square images in list items")
+    func extractFromHTML_removesRepeatedSmallSquareImages() throws {
+        let html = """
+            <html>
+              <head><title>Small Squares</title></head>
+              <body>
+                <article class="article-content">
+                  <h1>Small Squares</h1>
+                  <p>This content validates that repeated small square images used like interface affordances are stripped from list content.</p>
+                  <p>Additional story text keeps the extraction stable and prevents the list from being treated as isolated chrome.</p>
+                  <ul>
+                    <li><img src="https://cdn.example.com/check.png" width="32" height="32" alt="">Verified point one with real explanatory text.</li>
+                    <li><img src="https://cdn.example.com/check.png" width="32" height="32" alt="">Verified point two with real explanatory text.</li>
+                    <li><img src="https://cdn.example.com/check.png" width="32" height="32" alt="">Verified point three with real explanatory text.</li>
+                  </ul>
+                </article>
+              </body>
+            </html>
+            """
+
+        let extractor = ReadabilityExtractor()
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://example.com/small-squares")!)
+
+        #expect(article.textContent.contains("Verified point one"))
+        #expect(!article.contentHTML.contains("check.png"))
+    }
+
+    @Test("Keeps smaller informative image when captioned")
+    func extractFromHTML_keepsSmallCaptionedInformativeImage() throws {
+        let html = """
+            <html>
+              <head><title>Small Captioned Image</title></head>
+              <body>
+                <article class="article-content">
+                  <h1>Small Captioned Image</h1>
+                  <p>This article includes a smaller image that still carries information because it is explicitly captioned.</p>
+                  <figure>
+                    <img src="https://cdn.example.com/map-detail.png" width="160" height="160" alt="Inset map of the flood barrier route">
+                    <figcaption>Inset map showing the flood barrier route through the town center.</figcaption>
+                  </figure>
+                  <p>Additional paragraph text confirms the cleaner should preserve this figure despite the image being comparatively small.</p>
+                </article>
+              </body>
+            </html>
+            """
+
+        let extractor = ReadabilityExtractor()
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://example.com/small-captioned")!)
+
+        #expect(article.contentHTML.contains("map-detail.png"))
+        #expect(article.contentHTML.contains("figcaption"))
+    }
+
     @Test("Excludes hidden sidebar from candidate scoring")
     func extractFromHTML_hiddenSidebarDoesNotWinCandidateSelection() throws {
         let html = """
