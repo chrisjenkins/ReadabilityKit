@@ -15,19 +15,21 @@ public struct WebViewDOMLoader: URLLoading {
     public init() {}
 
     /// Loads the URL in `WKWebView` and returns the rendered DOM (`document.documentElement.outerHTML`).
-    /// - Parameter url: The page URL to load.
+    /// - Parameters:
+    ///   - url: The page URL to load.
+    ///   - userAgent: An optional custom user agent string to send with the request.
     /// - Returns: The post-load DOM HTML string captured from JavaScript.
     /// - Throws: A navigation error, `ReadabilityError.httpStatus(_:)`,
     ///   `ReadabilityError.decodingFailed`, or `ReadabilityError.emptyHTML`.
     @MainActor
-    public func fetchHTML(url: URL) async throws -> String {
+    public func fetchHTML(url: URL, userAgent: String?) async throws -> String {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .nonPersistent()
         let webView = WKWebView(frame: .zero, configuration: config)
         let delegate = NavigationDelegate()
         webView.navigationDelegate = delegate
 
-        try await delegate.awaitLoad(in: webView, url: url)
+        try await delegate.awaitLoad(in: webView, url: url, userAgent: userAgent)
 
         let result = try await webView.evaluateJavaScript("document.documentElement.outerHTML")
         guard let html = result as? String else { throw ReadabilityError.decodingFailed }
@@ -44,10 +46,10 @@ private final class NavigationDelegate: NSObject, WKNavigationDelegate {
     private var continuation: CheckedContinuation<Void, Error>?
     private var hasResolved = false
 
-    func awaitLoad(in webView: WKWebView, url: URL) async throws {
+    func awaitLoad(in webView: WKWebView, url: URL, userAgent: String?) async throws {
         var request = URLRequest(url: url)
-        request.setValue("ReadabilityKit/1.0 (+https://example.invalid)", forHTTPHeaderField: "User-Agent")
-        request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
+        request.setValue(userAgent ?? LoadingRequestDefaults.userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue(LoadingRequestDefaults.acceptHeader, forHTTPHeaderField: "Accept")
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             self.continuation = continuation

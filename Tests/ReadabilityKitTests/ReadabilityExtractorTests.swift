@@ -1235,15 +1235,62 @@ struct ReadabilityExtractorTests {
         #expect(!article.textContent.contains("Other story text should never be merged"))
         #expect(article.mergedPageURLs.count == 1)
     }
+
+    @Test("Passes custom user agent through URL-based extraction")
+    func extractFromURL_passesCustomUserAgentToLoader() async throws {
+        let url = URL(string: "https://example.com/article")!
+        let recorder = UserAgentRecorder()
+        let loader = StubURLLoader(
+            pages: [
+                url.absoluteString: """
+                    <html><head><title>Example</title></head><body>
+                    <article class="content">
+                      <p>This article contains enough text to pass readability extraction with a custom loader.</p>
+                      <p>A second paragraph keeps the extracted content comfortably above the minimum threshold.</p>
+                    </article>
+                    </body></html>
+                    """
+            ],
+            recorder: recorder
+        )
+        let extractor = ReadabilityExtractor(loader: loader)
+
+        _ = try await extractor.extract(from: url, userAgent: "ExampleBot/2.0")
+
+        let requests = await recorder.requests
+        #expect(requests.count == 1)
+        #expect(requests.first?.url == url)
+        #expect(requests.first?.userAgent == "ExampleBot/2.0")
+    }
 }
 
 private struct StubURLLoader: URLLoading {
     let pages: [String: String]
+    let recorder: UserAgentRecorder?
 
-    func fetchHTML(url: URL) async throws -> String {
+    init(pages: [String: String], recorder: UserAgentRecorder? = nil) {
+        self.pages = pages
+        self.recorder = recorder
+    }
+
+    func fetchHTML(url: URL, userAgent: String?) async throws -> String {
+        await recorder?.record(url: url, userAgent: userAgent)
         guard let html = pages[url.absoluteString] else {
             throw ReadabilityError.invalidResponse
         }
         return html
+    }
+}
+
+private actor UserAgentRecorder {
+    struct Request: Sendable {
+        let url: URL
+        let userAgent: String?
+    }
+
+    private(set) var requests: [Request] = []
+
+    func record(url: URL, userAgent: String?) {
+        requests.append(Request(url: url, userAgent: userAgent))
     }
 }
