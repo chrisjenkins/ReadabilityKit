@@ -86,6 +86,15 @@ func makeExtractor() -> ReadabilityExtractor {
 }
 ```
 
+You can also override the request user agent when loading from a URL:
+
+```swift
+let article = try await extractor.extract(
+    from: url,
+    userAgent: "MyApp/1.0 (https://example.com/bot)"
+)
+```
+
 ## Extract From Raw HTML
 
 ```swift

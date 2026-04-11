@@ -18,14 +18,16 @@ public struct URLSessionHTMLLoader: URLLoading {
     }
 
     /// Fetches HTML over HTTP and validates status code and string decoding.
-    /// - Parameter url: The page URL to request.
+    /// - Parameters:
+    ///   - url: The page URL to request.
+    ///   - userAgent: An optional custom user agent string to send with the request.
     /// - Returns: Decoded HTML from the response body.
     /// - Throws: `ReadabilityError.invalidResponse`, `ReadabilityError.httpStatus(_:)`,
     ///   `ReadabilityError.decodingFailed`, or `ReadabilityError.emptyHTML`.
-    public func fetchHTML(url: URL) async throws -> String {
+    public func fetchHTML(url: URL, userAgent: String?) async throws -> String {
         var request = URLRequest(url: url)
-        request.setValue("ReadabilityKit/1.0 (+https://example.invalid)", forHTTPHeaderField: "User-Agent")
-        request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
+        request.setValue(userAgent ?? LoadingRequestDefaults.userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue(LoadingRequestDefaults.acceptHeader, forHTTPHeaderField: "Accept")
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw ReadabilityError.invalidResponse }

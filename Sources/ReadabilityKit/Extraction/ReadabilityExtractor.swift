@@ -80,14 +80,16 @@ public struct ReadabilityExtractor: Sendable {
     /// 3. Score candidate nodes and select/cluster the best content region.
     /// 4. Run cleanup passes and return structured article output.
     ///
-    /// - Parameter url: The source page URL to extract.
+    /// - Parameters:
+    ///   - url: The source page URL to extract.
+    ///   - userAgent: An optional custom user agent string to send while loading the page.
     /// - Returns: An `Article` containing metadata, cleaned HTML, and plain text.
     /// - Throws: `ReadabilityError` when loading/parsing/content selection fails.
-    public func extract(from url: URL) async throws -> Article {
+    public func extract(from url: URL, userAgent: String? = nil) async throws -> Article {
         if options.enablePaginationMerge {
-            return try await extractWithPagination(from: url)
+            return try await extractWithPagination(from: url, userAgent: userAgent)
         }
-        let html = try await loader.fetchHTML(url: url)
+        let html = try await loader.fetchHTML(url: url, userAgent: userAgent)
         return try extractSinglePage(fromHTML: html, url: url).article
     }
 
@@ -105,7 +107,7 @@ public struct ReadabilityExtractor: Sendable {
         try extractSinglePage(fromHTML: html, url: url).article
     }
 
-    private func extractWithPagination(from url: URL) async throws -> Article {
+    private func extractWithPagination(from url: URL, userAgent: String?) async throws -> Article {
         var visitedURLs = Set<String>()
         var mergedArticles: [Article] = []
         var mergedPageURLs: [URL] = []
@@ -117,7 +119,7 @@ public struct ReadabilityExtractor: Sendable {
             if visitedURLs.contains(key) { break }
             visitedURLs.insert(key)
 
-            let html = try await loader.fetchHTML(url: pageURL)
+            let html = try await loader.fetchHTML(url: pageURL, userAgent: userAgent)
             let pageResult = try extractSinglePage(fromHTML: html, url: pageURL)
             let pageArticle = pageResult.article
 
