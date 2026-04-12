@@ -119,6 +119,87 @@ struct ReadabilityExtractorTests {
         #expect(!article.textContent.lowercased().contains("comments"))
     }
 
+    @Test("Truncates extracted content at article copyright and post-article terminal sections")
+    func extractFromHTML_truncatesAtPostArticleBoundaries() throws {
+        let html = """
+            <html>
+              <head><title>Terminal Boundary Test</title></head>
+              <body>
+                <div class="story-shell">
+                  <div class="article__text">
+                    <p>This opening paragraph contains enough substance to be treated as article prose during extraction and scoring.</p>
+                    <p>A second paragraph reinforces that the main story is longform content rather than navigation or teaser material.</p>
+                    <p class="article-copyright">Copyright 2026 Example Media. All rights reserved.</p>
+                    <section class="social footer__meta">
+                      <a href="/share/facebook">Share on Facebook</a>
+                      <a href="/share/x">Share on X</a>
+                    </section>
+                    <section class="extended-scroll">
+                      <h2>More Technology News</h2>
+                      <a href="/more-1">Another story</a>
+                      <a href="/more-2">Yet another story</a>
+                    </section>
+                  </div>
+                </div>
+                <footer class="network-footer">
+                  <a href="/privacy">Privacy Policy</a>
+                </footer>
+              </body>
+            </html>
+            """
+
+        let extractor = ReadabilityExtractor(options: .init(enableClustering: false, enableDomainRules: false))
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://example.com/story")!)
+
+        #expect(article.textContent.contains("opening paragraph"))
+        #expect(article.textContent.contains("second paragraph"))
+        #expect(!article.textContent.lowercased().contains("all rights reserved"))
+        #expect(!article.textContent.lowercased().contains("share on facebook"))
+        #expect(!article.textContent.lowercased().contains("more technology news"))
+        #expect(!article.textContent.lowercased().contains("privacy policy"))
+        #expect(!article.contentHTML.contains("article-copyright"))
+        #expect(!article.contentHTML.contains("extended-scroll"))
+        #expect(!article.contentHTML.contains("network-footer"))
+    }
+
+    @Test("Truncates generic legal and newsletter tails after meaningful prose")
+    func extractFromHTML_truncatesGenericTerminalTails() throws {
+        let html = """
+            <html>
+              <head><title>Generic Terminal Tail Test</title></head>
+              <body>
+                <article class="story-body">
+                  <div>
+                    <p>This article paragraph is long enough to count as meaningful prose and establishes the main extraction target clearly.</p>
+                    <p>A follow-up paragraph adds more detail so the extractor has a confident prose region before any tail content appears.</p>
+                  </div>
+                  <div class="legal-links">
+                    <a href="/privacy">Privacy Policy</a>
+                    <a href="/terms">Terms &amp; Conditions</a>
+                  </div>
+                  <div class="newsletter-signup">
+                    <h2>Don't miss a brief</h2>
+                    <form>
+                      <input type="email" />
+                      <button type="submit">Send</button>
+                    </form>
+                  </div>
+                </article>
+              </body>
+            </html>
+            """
+
+        let extractor = ReadabilityExtractor(options: .init(enableClustering: false, enableDomainRules: false))
+        let article = try extractor.extract(fromHTML: html, url: URL(string: "https://example.com/generic-tail")!)
+
+        #expect(article.textContent.contains("main extraction target"))
+        #expect(article.textContent.contains("follow-up paragraph"))
+        #expect(!article.textContent.lowercased().contains("privacy policy"))
+        #expect(!article.textContent.lowercased().contains("terms & conditions"))
+        #expect(!article.textContent.lowercased().contains("don't miss a brief"))
+        #expect(!article.contentHTML.contains("newsletter-signup"))
+    }
+
     @Test("Prunes terminal recommendation and comment sections from extracted root")
     func extractFromHTML_prunesTerminalContentSections() throws {
         let html = """
