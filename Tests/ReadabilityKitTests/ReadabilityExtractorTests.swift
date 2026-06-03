@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import SwiftSoup
 import Testing
 
 @testable import ReadabilityKit
@@ -198,6 +199,42 @@ struct ReadabilityExtractorTests {
         #expect(!article.textContent.lowercased().contains("terms & conditions"))
         #expect(!article.textContent.lowercased().contains("don't miss a brief"))
         #expect(!article.contentHTML.contains("newsletter-signup"))
+    }
+
+    @Test("Truncates trailing continue reading marker")
+    func pruneTerminalContentSectionsPass_truncatesContinueReadingTail() throws {
+        let html = """
+            <article class="story-body">
+              <div>
+                <p>This article paragraph is long enough to count as meaningful prose and establishes the main extraction target clearly.</p>
+                <p>A follow-up paragraph adds more detail so the extractor has a confident prose region before any tail content appears.</p>
+              </div>
+              <div class="inline-tail">
+                <span>Continue reading...</span>
+              </div>
+              <div class="related-links">
+                <a href="/more">Another story</a>
+              </div>
+            </article>
+            """
+
+        let doc = try SwiftSoup.parseBodyFragment(html)
+        guard let article = try doc.select("article").first() else {
+            Issue.record("Expected article root")
+            return
+        }
+
+        try PruneTerminalContentSectionsPass().apply(to: article, options: .init())
+
+        let textContent = try article.text()
+        let contentHTML = try article.outerHtml()
+
+        #expect(textContent.contains("main extraction target clearly"))
+        #expect(textContent.contains("confident prose region"))
+        #expect(!textContent.contains("Continue reading"))
+        #expect(!textContent.contains("Another story"))
+        #expect(!contentHTML.contains("inline-tail"))
+        #expect(!contentHTML.contains("related-links"))
     }
 
     @Test("Prunes terminal recommendation and comment sections from extracted root")

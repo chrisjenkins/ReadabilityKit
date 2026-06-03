@@ -67,8 +67,14 @@ struct PruneTerminalContentSectionsPass: ElementCleaningPass {
         "related stories",
         "continue reading",
     ]
+    private let explicitTerminalTextMarkers = [
+        "continue reading",
+        "continue reading...",
+        "continue reading…",
+    ]
 
     func apply(to target: Element, options _: ExtractionOptions) throws {
+        try truncateAtExplicitTerminalMarker(in: target)
         try truncateAtHardTerminalBoundary(in: target)
         try truncateAtGenericTerminalBoundary(in: target)
         try removeHardTerminalMatches(in: target)
@@ -78,6 +84,16 @@ struct PruneTerminalContentSectionsPass: ElementCleaningPass {
             if try shouldRemove(element) {
                 try element.remove()
             }
+        }
+    }
+
+    private func truncateAtExplicitTerminalMarker(in target: Element) throws {
+        let descendants = try target.select("*").array()
+
+        for candidate in descendants.reversed() {
+            guard isExplicitTerminalTextMarker(candidate) else { continue }
+            try removeCandidateAndTrailingContent(candidate, within: target)
+            return
         }
     }
 
@@ -103,6 +119,29 @@ struct PruneTerminalContentSectionsPass: ElementCleaningPass {
             return
         }
         try removeNodeAndFollowingSiblings(startingAt: truncationRoot, within: parent)
+    }
+
+    private func removeCandidateAndTrailingContent(_ candidate: Element, within target: Element) throws {
+        var node: Element? = candidate
+
+        while let current = node {
+            guard let parent = current.parent() else {
+                try current.remove()
+                return
+            }
+
+            if parent === target {
+                try removeNodeAndFollowingSiblings(startingAt: current, within: parent)
+                return
+            }
+
+            if hasFollowingSibling(after: current, within: parent) {
+                try removeNodeAndFollowingSiblings(startingAt: current, within: parent)
+                return
+            }
+
+            node = parent
+        }
     }
 
     private func removeHardTerminalMatches(in target: Element) throws {
@@ -160,6 +199,19 @@ struct PruneTerminalContentSectionsPass: ElementCleaningPass {
                 try sibling.remove()
             }
         }
+    }
+
+    private func hasFollowingSibling(after node: Element, within parent: Element) -> Bool {
+        var foundNode = false
+        for sibling in parent.children().array() {
+            if foundNode {
+                return true
+            }
+            if sibling === node {
+                foundNode = true
+            }
+        }
+        return false
     }
 
     private func isProseBearing(_ element: Element) -> Bool {
@@ -328,5 +380,14 @@ struct PruneTerminalContentSectionsPass: ElementCleaningPass {
             .components(separatedBy: .whitespacesAndNewlines)
             .filter { !$0.isEmpty }
             .joined(separator: " ")
+    }
+
+    private func isExplicitTerminalTextMarker(_ element: Element) -> Bool {
+        guard element.children().isEmpty() else { return false }
+        let normalizedText = normalize((try? element.text()) ?? "")
+        guard explicitTerminalTextMarkers.contains(normalizedText) else { return false }
+
+        let tag = element.tagName().lowercased()
+        return ["p", "div", "span", "a", "strong", "em", "b", "i"].contains(tag)
     }
 }
