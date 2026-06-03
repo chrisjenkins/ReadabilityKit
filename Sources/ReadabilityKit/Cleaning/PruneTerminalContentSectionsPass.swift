@@ -65,6 +65,7 @@ struct PruneTerminalContentSectionsPass: ElementCleaningPass {
         "most popular",
         "recommended stories",
         "related stories",
+        "continue reading",
     ]
 
     func apply(to target: Element, options _: ExtractionOptions) throws {
