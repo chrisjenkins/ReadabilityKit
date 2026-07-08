@@ -1078,6 +1078,42 @@ struct ReadabilityExtractorTests {
         #expect(!article.textContent.contains("Top stories"))
     }
 
+    @Test("Hints mode falls back to preferred domain root when generic extraction under-extracts")
+    func extractFromHTML_hintsModeFallsBackToPreferredDomainRoot() throws {
+        let html = """
+            <html>
+              <body>
+                <main id="main-content">
+                  <article>
+                    <div data-block="headline">
+                      <h1>Water bills rise again</h1>
+                    </div>
+                    <div data-block="text">
+                      <div data-testid="rich-text">
+                        <p>This first paragraph is long enough to be treated as meaningful article prose by the extractor while matching the current BBC article structure.</p>
+                        <p>A second paragraph confirms the preferred root keeps the actual story body instead of requiring the generic scorer to rediscover the same container.</p>
+                      </div>
+                    </div>
+                  </article>
+                </main>
+                <section data-component="topStories">
+                  <a href="/news/articles/zzz">Top stories</a>
+                </section>
+              </body>
+            </html>
+            """
+
+        let extractor = ReadabilityExtractor(options: .init(enableDomainRules: true, domainRuleMode: .rulesAsHints))
+        let article = try extractor.extract(
+            fromHTML: html,
+            url: URL(string: "https://www.bbc.co.uk/news/articles/cy73j385l82o")!
+        )
+
+        #expect(article.textContent.contains("meaningful article prose"))
+        #expect(article.textContent.contains("preferred root keeps the actual story body"))
+        #expect(!article.textContent.contains("Top stories"))
+    }
+
     @Test("Parses included Apple fixture HTML")
     func extractFromHTML_appleFixture_parsesCorrectly() throws {
         let fixtureURL = URL(fileURLWithPath: #filePath)
