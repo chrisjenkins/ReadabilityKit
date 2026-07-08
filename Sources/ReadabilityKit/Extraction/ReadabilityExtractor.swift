@@ -170,12 +170,74 @@ public struct ReadabilityExtractor: Sendable {
 
         let strictAttempt = ExtractionAttempt(removeUnlikelyCandidates: true, minimumTextLength: 80)
         let relaxedAttempt = ExtractionAttempt(removeUnlikelyCandidates: false, minimumTextLength: 40)
-
-        do {
-            let strictResult = try performExtraction(
+        if options.domainRuleMode == .preferRules {
+            return try performExtractionSequence(
                 fromHTML: trimmed,
                 url: url,
-                attempt: strictAttempt
+                strictAttempt: strictAttempt,
+                relaxedAttempt: relaxedAttempt,
+                usePreferredDomainRoot: true
+            )
+        }
+
+        let shouldTryPreferredRootFallback = options.enableDomainRules
+
+        do {
+            let genericResult = try performExtractionSequence(
+                fromHTML: trimmed,
+                url: url,
+                strictAttempt: strictAttempt,
+                relaxedAttempt: relaxedAttempt,
+                usePreferredDomainRoot: false
+            )
+
+            guard shouldTryPreferredRootFallback, genericResult.article.textContent.count < 320 else {
+                return genericResult
+            }
+
+            if let preferredRootResult = try? performExtractionSequence(
+                fromHTML: trimmed,
+                url: url,
+                strictAttempt: strictAttempt,
+                relaxedAttempt: relaxedAttempt,
+                usePreferredDomainRoot: true
+            ) {
+                let genericQuality = articleQualityScore(genericResult.article)
+                let preferredQuality = articleQualityScore(preferredRootResult.article)
+                if preferredQuality > genericQuality * 1.1 {
+                    return preferredRootResult
+                }
+            }
+
+            return genericResult
+        } catch {
+            guard shouldTryPreferredRootFallback else {
+                throw error
+            }
+
+            return try performExtractionSequence(
+                fromHTML: trimmed,
+                url: url,
+                strictAttempt: strictAttempt,
+                relaxedAttempt: relaxedAttempt,
+                usePreferredDomainRoot: true
+            )
+        }
+    }
+
+    private func performExtractionSequence(
+        fromHTML html: String,
+        url: URL,
+        strictAttempt: ExtractionAttempt,
+        relaxedAttempt: ExtractionAttempt,
+        usePreferredDomainRoot: Bool
+    ) throws -> SinglePageExtractionResult {
+        do {
+            let strictResult = try performExtraction(
+                fromHTML: html,
+                url: url,
+                attempt: strictAttempt,
+                usePreferredDomainRoot: usePreferredDomainRoot
             )
             let strictArticle = strictResult.article
 
@@ -185,9 +247,10 @@ public struct ReadabilityExtractor: Sendable {
             }
 
             if let relaxedResult = try? performExtraction(
-                fromHTML: trimmed,
+                fromHTML: html,
                 url: url,
-                attempt: relaxedAttempt
+                attempt: relaxedAttempt,
+                usePreferredDomainRoot: usePreferredDomainRoot
             ) {
                 let relaxedArticle = relaxedResult.article
                 let strictQuality = articleQualityScore(strictArticle)
@@ -200,9 +263,10 @@ public struct ReadabilityExtractor: Sendable {
             return strictResult
         } catch {
             return try performExtraction(
-                fromHTML: trimmed,
+                fromHTML: html,
                 url: url,
-                attempt: relaxedAttempt
+                attempt: relaxedAttempt,
+                usePreferredDomainRoot: usePreferredDomainRoot
             )
         }
     }
@@ -210,7 +274,8 @@ public struct ReadabilityExtractor: Sendable {
     private func performExtraction(
         fromHTML html: String,
         url: URL,
-        attempt: ExtractionAttempt
+        attempt: ExtractionAttempt,
+        usePreferredDomainRoot: Bool
     ) throws -> SinglePageExtractionResult {
         let doc = try SwiftSoup.parse(html, url.absoluteString)
         let metadata = try extractMetadata(doc: doc, fallbackURL: url)
@@ -226,7 +291,7 @@ public struct ReadabilityExtractor: Sendable {
         if options.filterHiddenNodes {
             try removeHiddenElementsPass.apply(to: doc, options: options)
         }
-        let preferredDomainRoot = (options.domainRuleMode == .preferRules)
+        let preferredDomainRoot = usePreferredDomainRoot
             ? try preferredDomainContentRoot(rules: matchingRules, doc: doc)
             : nil
         if attempt.removeUnlikelyCandidates && preferredDomainRoot == nil {
