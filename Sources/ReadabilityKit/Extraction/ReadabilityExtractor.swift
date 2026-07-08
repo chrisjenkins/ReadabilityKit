@@ -86,11 +86,12 @@ public struct ReadabilityExtractor: Sendable {
     /// - Returns: An `Article` containing metadata, cleaned HTML, and plain text.
     /// - Throws: `ReadabilityError` when loading/parsing/content selection fails.
     public func extract(from url: URL, userAgent: String? = nil) async throws -> Article {
+        let sanitizedURL = url.strippingTrackingQueryParameters()
         if options.enablePaginationMerge {
-            return try await extractWithPagination(from: url, userAgent: userAgent)
+            return try await extractWithPagination(from: sanitizedURL, userAgent: userAgent)
         }
-        let html = try await loader.fetchHTML(url: url, userAgent: userAgent)
-        return try extractSinglePage(fromHTML: html, url: url).article
+        let html = try await loader.fetchHTML(url: sanitizedURL, userAgent: userAgent)
+        return try extractSinglePage(fromHTML: html, url: sanitizedURL).article
     }
 
     /// Parses already-available HTML and extracts the most readable article region.
@@ -119,20 +120,21 @@ public struct ReadabilityExtractor: Sendable {
             if visitedURLs.contains(key) { break }
             visitedURLs.insert(key)
 
-            let html = try await loader.fetchHTML(url: pageURL, userAgent: userAgent)
-            let pageResult = try extractSinglePage(fromHTML: html, url: pageURL)
+            let sanitizedPageURL = pageURL.strippingTrackingQueryParameters()
+            let html = try await loader.fetchHTML(url: sanitizedPageURL, userAgent: userAgent)
+            let pageResult = try extractSinglePage(fromHTML: html, url: sanitizedPageURL)
             let pageArticle = pageResult.article
 
             if mergedArticles.isEmpty {
                 firstDetectedNextPageURL = pageResult.nextPageURL
                 mergedArticles.append(pageArticle)
-                mergedPageURLs.append(pageURL)
+                mergedPageURLs.append(sanitizedPageURL)
             } else {
                 if isLikelyDuplicatePage(pageArticle, comparedWith: mergedArticles) {
                     break
                 }
                 mergedArticles.append(pageArticle)
-                mergedPageURLs.append(pageURL)
+                mergedPageURLs.append(sanitizedPageURL)
             }
 
             guard let candidateNextURL = pageResult.nextPageURL else {
@@ -145,7 +147,7 @@ public struct ReadabilityExtractor: Sendable {
         }
 
         guard let firstArticle = mergedArticles.first else {
-            throw ReadabilityError.noReadableContent
+            throw ReadabilityError.parseFailed
         }
         let merged = try mergeArticlePages(mergedArticles, primaryURL: url)
 
@@ -248,7 +250,7 @@ public struct ReadabilityExtractor: Sendable {
                 candidateAdjustments: candidateAdjustments
             )
             guard let topCandidate = candidates.max(by: { $0.score < $1.score }) else {
-                throw ReadabilityError.noReadableContent
+                throw ReadabilityError.noContentCandidatesFound
             }
 
             if options.enableClustering {
@@ -310,8 +312,12 @@ public struct ReadabilityExtractor: Sendable {
         )
         #endif
 
-        guard textContent.trimmingCharacters(in: .whitespacesAndNewlines).count >= attempt.minimumTextLength else {
-            throw ReadabilityError.noReadableContent
+        let trimmedTextCount = textContent.trimmingCharacters(in: .whitespacesAndNewlines).count
+        guard trimmedTextCount >= attempt.minimumTextLength else {
+            throw ReadabilityError.extractedContentTooShort(
+                actualCount: trimmedTextCount,
+                minimumCount: attempt.minimumTextLength
+            )
         }
 
         let article = Article(
@@ -848,7 +854,7 @@ public struct ReadabilityExtractor: Sendable {
     }
 
     private func mergeArticlePages(_ pages: [Article], primaryURL: URL) throws -> Article {
-        guard let first = pages.first else { throw ReadabilityError.noReadableContent }
+        guard let first = pages.first else { throw ReadabilityError.parseFailed }
         guard pages.count > 1 else { return first }
 
         let wrapper = Element(Tag(options.wrapInArticleTag ? "article" : "div"), primaryURL.absoluteString)
@@ -945,9 +951,10 @@ public struct ReadabilityExtractor: Sendable {
     }
 
     private func normalizedURLKey(_ url: URL) -> String {
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        let sanitizedURL = url.strippingTrackingQueryParameters()
+        var components = URLComponents(url: sanitizedURL, resolvingAgainstBaseURL: false)
         components?.fragment = nil
-        return components?.string?.lowercased() ?? url.absoluteString.lowercased()
+        return components?.string?.lowercased() ?? sanitizedURL.absoluteString.lowercased()
     }
 
     private func articleQualityScore(_ article: Article) -> Double {

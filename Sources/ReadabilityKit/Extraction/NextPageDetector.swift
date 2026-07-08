@@ -39,7 +39,7 @@ struct NextPageDetector {
 
         if let relNext = try doc.select("link[rel=next]").first() {
             let href = try relNext.attr("href")
-            if let url = URL(string: href, relativeTo: baseURL)?.absoluteURL {
+            if let url = URL(string: href, relativeTo: baseURL)?.absoluteURL.strippingTrackingQueryParameters() {
                 let key = normalizedURLKey(url)
                 scored[key, default: 0] += 0.9
                 canonical[key] = url
@@ -48,7 +48,9 @@ struct NextPageDetector {
 
         for anchor in try doc.select("a[href]").array() {
             let href = try anchor.attr("href")
-            guard let url = URL(string: href, relativeTo: baseURL)?.absoluteURL else { continue }
+            guard let url = URL(string: href, relativeTo: baseURL)?.absoluteURL.strippingTrackingQueryParameters() else {
+                continue
+            }
             let key = normalizedURLKey(url)
             var score = 0.0
 
@@ -139,9 +141,10 @@ struct NextPageDetector {
     }
 
     private func normalizedURLKey(_ url: URL) -> String {
-        var comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        let sanitizedURL = url.strippingTrackingQueryParameters()
+        var comps = URLComponents(url: sanitizedURL, resolvingAgainstBaseURL: false)
         comps?.fragment = nil
-        return comps?.string?.lowercased() ?? url.absoluteString.lowercased()
+        return comps?.string?.lowercased() ?? sanitizedURL.absoluteString.lowercased()
     }
 
     private func domPath(for element: Element) -> String {

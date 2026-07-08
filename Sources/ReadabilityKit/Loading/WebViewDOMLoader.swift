@@ -47,7 +47,7 @@ private final class NavigationDelegate: NSObject, WKNavigationDelegate {
     private var hasResolved = false
 
     func awaitLoad(in webView: WKWebView, url: URL, userAgent: String?) async throws {
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: url.strippingTrackingQueryParameters())
         request.setValue(userAgent ?? LoadingRequestDefaults.userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue(LoadingRequestDefaults.acceptHeader, forHTTPHeaderField: "Accept")
 

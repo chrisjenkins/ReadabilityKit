@@ -15,6 +15,10 @@ struct ClusteringEngine {
         baseUri: String,
         options: ExtractionOptions
     ) throws -> Element {
+        guard !candidates.isEmpty else {
+            throw ReadabilityError.noContentCandidatesFound
+        }
+
         let top =
             candidates
             .sorted { $0.score > $1.score }
@@ -68,7 +72,7 @@ struct ClusteringEngine {
         }
 
         guard let bestCluster = clusters.max(by: { clusterValue($0) < clusterValue($1) }) else {
-            throw ReadabilityError.noReadableContent
+            throw ReadabilityError.noContentCandidatesFound
         }
 
         let bestSorted = bestCluster.sorted { $0.orderIndex < $1.orderIndex }
