@@ -119,6 +119,53 @@ struct ReadabilityExtractorTests {
         #expect(!article.textContent.lowercased().contains("comments"))
     }
 
+    @Test("Throws a specific error when no readable content candidates are found")
+    func extractFromHTML_throwsWhenNoContentCandidatesExist() {
+        let html = """
+            <html>
+              <body>
+                <nav>
+                  <a href="/">Home</a>
+                  <a href="/about">About</a>
+                </nav>
+              </body>
+            </html>
+            """
+        let extractor = ReadabilityExtractor(options: .init(enableClustering: false, enableDomainRules: false))
+
+        do {
+            _ = try extractor.extract(fromHTML: html, url: URL(string: "https://example.com/nav-only")!)
+            Issue.record("Expected extraction to fail")
+        } catch let error as ReadabilityError {
+            #expect(error == .noContentCandidatesFound)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test("Throws a specific error when extracted text is too short")
+    func extractFromHTML_throwsWhenExtractedTextIsTooShort() {
+        let html = """
+            <html>
+              <body>
+                <article>
+                  <p>Brief text, but too short to qualify.</p>
+                </article>
+              </body>
+            </html>
+            """
+        let extractor = ReadabilityExtractor(options: .init(enableClustering: false, enableDomainRules: false))
+
+        do {
+            _ = try extractor.extract(fromHTML: html, url: URL(string: "https://example.com/too-short")!)
+            Issue.record("Expected extraction to fail")
+        } catch let error as ReadabilityError {
+            #expect(error == .extractedContentTooShort(actualCount: 37, minimumCount: 40))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
     @Test("Truncates extracted content at article copyright and post-article terminal sections")
     func extractFromHTML_truncatesAtPostArticleBoundaries() throws {
         let html = """
@@ -1342,6 +1389,76 @@ struct ReadabilityExtractorTests {
         #expect(requests.count == 1)
         #expect(requests.first?.url == url)
         #expect(requests.first?.userAgent == "ExampleBot/2.0")
+    }
+
+    @Test("Strips tracking query parameters before fetching URLs")
+    func extractFromURL_stripsTrackingQueryParametersBeforeFetching() async throws {
+        let requestedURL = URL(
+            string: "https://example.com/article?at_medium=display&utm_campaign=summer&foo=bar&fbclid=abc123"
+        )!
+        let sanitizedURL = URL(string: "https://example.com/article?foo=bar")!
+        let recorder = UserAgentRecorder()
+        let loader = StubURLLoader(
+            pages: [
+                sanitizedURL.absoluteString: """
+                    <html><head><title>Example</title></head><body>
+                    <article class="content">
+                      <p>This article contains enough text to pass readability extraction after URL sanitization.</p>
+                      <p>A second paragraph confirms the loader received the cleaned URL rather than the tracked one.</p>
+                    </article>
+                    </body></html>
+                    """
+            ],
+            recorder: recorder
+        )
+        let extractor = ReadabilityExtractor(loader: loader)
+
+        let article = try await extractor.extract(from: requestedURL)
+
+        let requests = await recorder.requests
+        #expect(requests.count == 1)
+        #expect(requests.first?.url == sanitizedURL)
+        #expect(article.url == sanitizedURL)
+    }
+
+    @Test("Strips tracking query parameters from paginated next-page fetches")
+    func extractFromURL_stripsTrackingQueryParametersDuringPagination() async throws {
+        let page1RequestedURL = URL(string: "https://example.com/story?page=1&at_campaign=homepage")!
+        let page1SanitizedURL = URL(string: "https://example.com/story?page=1")!
+        let page2SanitizedURL = URL(string: "https://example.com/story?page=2")!
+        let recorder = UserAgentRecorder()
+        let loader = StubURLLoader(
+            pages: [
+                page1SanitizedURL.absoluteString: """
+                    <html><head><title>Paginated Story</title></head><body>
+                    <article class="content">
+                      <h1>Paginated Story</h1>
+                      <p>Part one introduces the subject with enough narrative detail to pass readability scoring.</p>
+                      <a rel="next" href="https://example.com/story?page=2&at_medium=display_ad">Next</a>
+                    </article>
+                    </body></html>
+                    """,
+                page2SanitizedURL.absoluteString: """
+                    <html><head><title>Paginated Story</title></head><body>
+                    <article class="content">
+                      <p>Part two continues the same story with additional depth and concrete examples for readers.</p>
+                    </article>
+                    </body></html>
+                    """,
+            ],
+            recorder: recorder
+        )
+        let extractor = ReadabilityExtractor(
+            loader: loader,
+            options: .init(enablePaginationMerge: true, maxPaginationPages: 3, enableDomainRules: false)
+        )
+
+        let article = try await extractor.extract(from: page1RequestedURL)
+
+        let requests = await recorder.requests
+        #expect(requests.map(\.url) == [page1SanitizedURL, page2SanitizedURL])
+        #expect(article.nextPageURL == page2SanitizedURL)
+        #expect(article.mergedPageURLs == [page1SanitizedURL, page2SanitizedURL])
     }
 }
 

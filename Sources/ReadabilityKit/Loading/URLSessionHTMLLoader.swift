@@ -25,7 +25,7 @@ public struct URLSessionHTMLLoader: URLLoading {
     /// - Throws: `ReadabilityError.invalidResponse`, `ReadabilityError.httpStatus(_:)`,
     ///   `ReadabilityError.decodingFailed`, or `ReadabilityError.emptyHTML`.
     public func fetchHTML(url: URL, userAgent: String?) async throws -> String {
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: url.strippingTrackingQueryParameters())
         request.setValue(userAgent ?? LoadingRequestDefaults.userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue(LoadingRequestDefaults.acceptHeader, forHTTPHeaderField: "Accept")
 
