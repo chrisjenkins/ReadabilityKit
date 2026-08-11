@@ -337,6 +337,9 @@ public struct ReadabilityExtractor: Sendable {
         try removeFormsButtonsEtcPass.apply(to: contentRoot, options: options)
         try removeLikelyJunkBlocksPass.apply(to: contentRoot, options: options)
         try pruneTerminalContentSectionsPass.apply(to: contentRoot, options: options)
+        for rule in matchingRules {
+            try rule.cleanExtractedContent(contentRoot)
+        }
         try fixLazyMediaPass.apply(to: contentRoot, options: options)
         try decorativeImageCleaningPass.apply(to: contentRoot, options: options)
         try cleanTablesPass.apply(to: contentRoot, options: options)

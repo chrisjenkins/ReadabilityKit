@@ -96,4 +96,67 @@ struct BBCNewsArticlesDomainExtractionRule: DomainExtractionRule {
             leadImageSelectors: leadImageSelectors
         )
     }
+
+    /// Removes the News Daily newsletter promotion that BBC places after article content.
+    ///
+    /// The promotion is emitted as a normal `data-block=image` figure followed by a `data-block=text`
+    /// signup block, so generic decorative-image filtering correctly preserves it as meaningful media.
+    func cleanExtractedContent(_ contentRoot: Element) throws {
+        let images = try contentRoot.select("img").array()
+
+        for image in images where try image.attr("alt")
+            .lowercased()
+            .contains("news daily newsletter")
+        {
+            guard let imageBlock = try enclosingImageBlock(for: image, within: contentRoot) else {
+                continue
+            }
+
+            let signupBlock = try followingNewsletterSignupBlock(after: imageBlock)
+            try imageBlock.remove()
+            try signupBlock?.remove()
+        }
+    }
+
+    private func enclosingImageBlock(for image: Element, within contentRoot: Element) throws -> Element? {
+        var current = image.parent()
+
+        while let element = current, element !== contentRoot {
+            if element.tagName().lowercased() == "div",
+                try element.attr("data-block") == "image"
+            {
+                return element
+            }
+
+            current = element.parent()
+        }
+
+        return nil
+    }
+
+    private func followingNewsletterSignupBlock(after imageBlock: Element) throws -> Element? {
+        guard
+            let parent = imageBlock.parent(),
+            let imageBlockIndex = parent.children().array().firstIndex(where: { $0 === imageBlock })
+        else {
+            return nil
+        }
+
+        let siblings = parent.children().array()
+        let nextIndex = siblings.index(after: imageBlockIndex)
+        guard siblings.indices.contains(nextIndex) else {
+            return nil
+        }
+
+        let nextBlock = siblings[nextIndex]
+        guard
+            nextBlock.tagName().lowercased() == "div",
+            try nextBlock.attr("data-block") == "text",
+            try !nextBlock.select("a[href*='/newsletters/']").isEmpty()
+        else {
+            return nil
+        }
+
+        return nextBlock
+    }
 }

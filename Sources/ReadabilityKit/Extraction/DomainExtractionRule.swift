@@ -48,6 +48,7 @@ struct DomainMetadataOverride: Sendable {
 /// 2. Optional content-root selection via ``preferredContentRoot(in:)`` when rule mode is `preferRules`.
 /// 3. Optional score and metadata overrides via ``candidateScoreAdjustments(in:)`` and
 ///    ``metadataOverrides(in:fallbackURL:)``.
+/// 4. Optional post-selection cleanup via ``cleanExtractedContent(_:)``.
 ///
 /// Implementers should prefer stable selectors and conservative score deltas so behavior
 /// degrades gracefully when site markup changes.
@@ -74,6 +75,10 @@ protocol DomainExtractionRule: Sendable {
     ///   - doc: Parsed source document.
     ///   - fallbackURL: Canonical URL used for relative URL resolution.
     func metadataOverrides(in doc: Document, fallbackURL: URL) throws -> DomainMetadataOverride
+
+    /// Removes site-specific non-article markup from the selected content root.
+    /// - Parameter contentRoot: The extracted article element after generic cleanup passes.
+    func cleanExtractedContent(_ contentRoot: Element) throws
 }
 
 extension DomainExtractionRule {
@@ -91,4 +96,6 @@ extension DomainExtractionRule {
     func metadataOverrides(in _: Document, fallbackURL _: URL) throws -> DomainMetadataOverride {
         .empty
     }
+
+    func cleanExtractedContent(_: Element) throws {}
 }

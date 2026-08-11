@@ -1078,6 +1078,57 @@ struct ReadabilityExtractorTests {
         #expect(!article.textContent.contains("Top stories"))
     }
 
+    @Test("Removes the BBC News Daily newsletter promotion")
+    func extractFromHTML_bbcNewsletterPromotion_removesImageAndSignupBlock() throws {
+        let html = """
+            <html>
+              <body>
+                <main id="main-content">
+                  <article>
+                    <div data-block="text">
+                      <p>Meaningful article prose remains available to the reader.</p>
+                    </div>
+                    <div data-block="image">
+                      <figure>
+                        <img alt="A BBC photograph of the story subject." src="https://example.com/story.jpg">
+                      </figure>
+                    </div>
+                    <div data-block="image">
+                      <figure>
+                        <img
+                          alt="A thin, grey banner promoting the News Daily newsletter."
+                          src="https://ichef.bbci.co.uk/news-daily.png"
+                          width="1920"
+                          height="316"
+                        >
+                      </figure>
+                    </div>
+                    <div data-block="text">
+                      <p>
+                        Get our flagship newsletter with the headlines you need.
+                        <a href="/newsletters/zhp28xs">Sign up here.</a>
+                      </p>
+                    </div>
+                    <div data-block="topicList"><p>Related topics</p></div>
+                  </article>
+                </main>
+              </body>
+            </html>
+            """
+
+        let extractor = ReadabilityExtractor(options: .init(domainRuleMode: .preferRules))
+        let article = try extractor.extract(
+            fromHTML: html,
+            url: URL(string: "https://www.bbc.co.uk/news/articles/cly5x9qlnvjo")!
+        )
+
+        #expect(article.contentHTML.contains("story.jpg"))
+        #expect(article.textContent.contains("Meaningful article prose remains available"))
+        #expect(!article.contentHTML.contains("news-daily.png"))
+        #expect(!article.contentHTML.contains("/newsletters/zhp28xs"))
+        #expect(!article.textContent.contains("Get our flagship newsletter"))
+    }
+
     @Test("Hints mode falls back to preferred domain root when generic extraction under-extracts")
     func extractFromHTML_hintsModeFallsBackToPreferredDomainRoot() throws {
         let html = """
