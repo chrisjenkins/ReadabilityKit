@@ -10,6 +10,7 @@ import Foundation
 /// Enumerates known failure modes during loading, parsing, and extraction.
 public enum ReadabilityError: Error, Sendable, Equatable {
     case invalidResponse
+    case cloudflareChallenge
     case httpStatus(Int)
     case decodingFailed
     case emptyHTML

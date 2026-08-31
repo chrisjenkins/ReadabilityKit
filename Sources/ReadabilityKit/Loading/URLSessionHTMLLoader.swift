@@ -22,8 +22,9 @@ public struct URLSessionHTMLLoader: URLLoading {
     ///   - url: The page URL to request.
     ///   - userAgent: An optional custom user agent string to send with the request.
     /// - Returns: Decoded HTML from the response body.
-    /// - Throws: `ReadabilityError.invalidResponse`, `ReadabilityError.httpStatus(_:)`,
-    ///   `ReadabilityError.decodingFailed`, or `ReadabilityError.emptyHTML`.
+    /// - Throws: `ReadabilityError.invalidResponse`, `ReadabilityError.cloudflareChallenge`,
+    ///   `ReadabilityError.httpStatus(_:)`, `ReadabilityError.decodingFailed`, or
+    ///   `ReadabilityError.emptyHTML`.
     public func fetchHTML(url: URL, userAgent: String?) async throws -> String {
         var request = URLRequest(url: url.strippingTrackingQueryParameters())
         request.setValue(userAgent ?? LoadingRequestDefaults.userAgent, forHTTPHeaderField: "User-Agent")
@@ -31,6 +32,9 @@ public struct URLSessionHTMLLoader: URLLoading {
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw ReadabilityError.invalidResponse }
+        if http.value(forHTTPHeaderField: "cf-mitigated")?.lowercased() == "challenge" {
+            throw ReadabilityError.cloudflareChallenge
+        }
         guard (200..<300).contains(http.statusCode) else { throw ReadabilityError.httpStatus(http.statusCode) }
 
         let html =
