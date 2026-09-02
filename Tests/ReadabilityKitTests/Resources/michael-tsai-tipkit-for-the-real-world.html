@@ -1,0 +1,54 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+<title>Michael Tsai - Blog - TipKit for the Real World</title>
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+<meta name="author" content="Michael J. Tsai" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link rel="canonical" href="https://mjtsai.com/blog/2026/09/01/tipkit-for-the-real-world/" />
+</head>
+<body>
+<div id="main">
+    <p class="day">Tuesday, September 1, 2026</p>
+    <div class="post">
+        <h1 id="post-53059"><a href="https://mjtsai.com/blog/2026/09/01/tipkit-for-the-real-world/">TipKit for the Real World</a></h1>
+        <p><a href="https://furbo.org/2026/08/31/tipkit-for-the-real-world/">Craig Hockenberry</a>:</p>
+        <blockquote cite="https://furbo.org/2026/08/31/tipkit-for-the-real-world/">
+            <p>Then, when you look at <a href="https://developer.apple.com/documentation/tipkit/highlightingappfeatureswithtipkit">the sample code</a>, it’s all SwiftUI. At least the sample compiles and runs because it uses a completely different syntax than what was shown at WWDC.</p>
+            <p>[…]</p>
+            <p>Eventually I stumbled upon <a href="https://developer.apple.com/documentation/tipkit/tipuipopoverviewcontroller">TipUIPopoverViewController</a> which inherits from UIViewController. That should work! […] But it didn’t: <a href="https://github.com/chockenberry/Tipster/blob/748b149db9823720be270bd0f4b3ebfd0b9d1b42/Tipster/PresentedViewController.swift#L100">the close button on the popover didn’t work</a>.</p>
+            <p>[…]</p>
+            <p>Until you realize that any changes you make are <a href="https://fatbobman.com/en/posts/mastering-tipkit-advance/#finding-answers-from-tipkits-persistent-data">stored in a SQLite database</a>, debugging is very confusing. It’s also easy for your own state to get out-of-sync with the Tip state: there is not a single source of truth.</p>
+            <p>[…]</p>
+            <p>Unfortunately, that sample code doesn’t scale well. If you have a view with multiple tips, you’re going to be littering your code with tip instances, observation tasks, and popover controllers. It’s a mess and a clear sign that the TipKit developers didn’t think much about UIKit.</p>
+        </blockquote>
+        <p><a href="https://fatbobman.com/en/posts/mastering-tipkit-advance/">Fatbobman</a>:</p>
+        <blockquote cite="https://fatbobman.com/en/posts/mastering-tipkit-advance/">
+            <p>In the previous article, we introduced the basic usage of TipKit. In this article, we will discuss some advanced topics related to TipKit, such as how to fully customize Tip views, how to use TipKit with UIKit, and how TipKit can share data across different applications.</p>
+        </blockquote>
+        <p>Previously:</p>
+        <ul>
+            <li><a href="https://mjtsai.com/blog/2026/06/19/swiftui-in-appleos-27/">SwiftUI in appleOS 27</a></li>
+            <li><a href="https://mjtsai.com/blog/2025/06/18/swiftui-at-wwdc-2025/">SwiftUI at WWDC 2025</a></li>
+        </ul>
+        <p class="tags"><a rel="tag" href="https://mjtsai.com/blog/tag/ios/">iOS</a> <a rel="tag" href="https://mjtsai.com/blog/tag/swiftui/">SwiftUI</a></p>
+        <div class="feedback"><p></p></div>
+        <h2><a id="comments"></a><a id="respond"></a>Comments <span class="comment-links"><a href="https://mjtsai.com/blog/2026/09/01/tipkit-for-the-real-world/feed/">RSS</a></span></h2>
+        <h3 id="postcomment">Leave a Comment</h3>
+        <form action="https://mjtsai.com/blog/wp-comments-post.php" method="post" id="commentform">
+            <p><input type="text" name="author" id="author" value="" size="22" /><label for="author"><small>Name</small></label></p>
+            <p><textarea class="comment-form-body" name="comment" id="comment" cols="80" rows="10"></textarea></p>
+            <p><input name="submit" type="submit" id="submit" value="Submit Comment" /></p>
+        </form>
+    </div>
+</div>
+<div id="aux">
+    <div id="navbar">
+        <p><a href="/blog/">Blog</a><br /><a href="/blog/archives/">Archives</a><br /><a href="/blog/comments/feed/">Comments</a></p>
+    </div>
+    <div id="search"><form action="https://duckduckgo.com" id="search-box" method="get"><input type="search" name="q" /><input value="Search" type="submit" /></form></div>
+</div>
+<div class="copyright">Copyright © 2000–2026 Michael Tsai.</div>
+</body>
+</html>

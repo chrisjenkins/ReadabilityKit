@@ -24,7 +24,10 @@ let package = Package(
         ),
         .testTarget(
             name: "ReadabilityKitTests",
-            dependencies: ["ReadabilityKit"]
+            dependencies: ["ReadabilityKit"],
+            resources: [
+                .copy("Resources"),
+            ]
         ),
     ]
 )
