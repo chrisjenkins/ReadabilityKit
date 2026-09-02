@@ -1061,6 +1061,26 @@ struct ReadabilityExtractorTests {
         #expect(article.contentHTML.contains("<p"))
     }
 
+    @Test("Parses the Michael Tsai TipKit fixture")
+    func extractFromHTML_michaelTsaiTipKitFixture_parsesCorrectly() throws {
+        let fixtureURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("Resources")
+            .appendingPathComponent("michael-tsai-tipkit-for-the-real-world.html")
+        let html = try String(contentsOf: fixtureURL, encoding: .utf8)
+
+        let extractor = ReadabilityExtractor()
+        let article = try extractor.extract(
+            fromHTML: html,
+            url: URL(string: "https://mjtsai.com/blog/2026/09/01/tipkit-for-the-real-world/")!
+        )
+
+        #expect(article.title.contains("TipKit for the Real World"))
+        #expect(article.textContent.contains("TipUIPopoverViewController"))
+        #expect(article.textContent.contains("there is not a single source of truth"))
+        #expect(!article.textContent.contains("Leave a Comment"))
+    }
+
     @Test("Parses included BBC News fixture HTML")
     func extractFromHTML_bbcNewsFixture_parsesCorrectly() throws {
         let fixtureURL = URL(fileURLWithPath: #filePath)
