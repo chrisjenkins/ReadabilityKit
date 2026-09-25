@@ -54,6 +54,7 @@ public struct ReadabilityExtractor: Sendable {
     private let fixLazyMediaPass = FixLazyMediaPass()
     private let decorativeImageCleaningPass = DecorativeImageCleaningPass()
     private let cleanTablesPass = CleanTablesPass()
+    private let normalizeDefinitionListArticlesPass = NormalizeDefinitionListArticlesPass()
     private let stripEmptyParagraphsPass = StripEmptyParagraphsPass()
     private let unwrapRedundantSpansAndDivsPass = UnwrapRedundantSpansAndDivsPass()
     private let dedupeHeadersPass = DedupeHeadersPass()
@@ -343,6 +344,7 @@ public struct ReadabilityExtractor: Sendable {
         try fixLazyMediaPass.apply(to: contentRoot, options: options)
         try decorativeImageCleaningPass.apply(to: contentRoot, options: options)
         try cleanTablesPass.apply(to: contentRoot, options: options)
+        try normalizeDefinitionListArticlesPass.apply(to: contentRoot, options: options)
         try stripEmptyParagraphsPass.apply(to: contentRoot, options: options)
         try unwrapRedundantSpansAndDivsPass.apply(to: contentRoot, options: options)
         let resolvedTitle = domainMetadata.title ?? metadata.title
