@@ -51,7 +51,7 @@ public struct ExtractionOptions: Sendable {
     ///   - filterHiddenNodes: Removes hidden or aria-hidden DOM regions and skips them during scoring.
     ///   - dedupeTitleHeaders: Removes in-body header nodes that duplicate the resolved article title.
     ///   - dropPreambleHeadersBeforeFirstParagraph: Removes preamble headers before first body paragraph.
-    ///   - removeDecorativeImages: Removes decorative or navigational images from extracted content.
+    ///   - removeDecorativeImages: Removes decorative or navigational images and inline quotation SVGs from extracted content.
     ///   - decorativeImageRemovalThreshold: Minimum heuristic score required to drop an image as decorative.
     ///   - enableClustering: Enables multi-node clustering instead of single best-node selection.
     ///   - clusterTopN: Maximum top-scoring nodes considered for cluster merge.
