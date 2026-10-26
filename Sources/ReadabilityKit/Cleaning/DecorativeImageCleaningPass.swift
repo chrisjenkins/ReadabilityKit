@@ -8,10 +8,12 @@
 import Foundation
 import SwiftSoup
 
-/// Removes images that are likely decorative while preserving article media with captions or strong content signals.
+/// Removes decorative images and inline quotation SVGs while preserving informative article media.
 struct DecorativeImageCleaningPass: ElementCleaningPass {
     func apply(to target: Element, options: ExtractionOptions) throws {
         guard options.removeDecorativeImages else { return }
+
+        try removeDecorativeSVGs(from: target)
 
         let images = try target.select("img").array()
         guard !images.isEmpty else { return }
@@ -27,6 +29,34 @@ struct DecorativeImageCleaningPass: ElementCleaningPass {
             if score >= options.decorativeImageRemovalThreshold {
                 try image.remove()
             }
+        }
+    }
+
+    private func removeDecorativeSVGs(from target: Element) throws {
+        let quotationMarkLabels: Set<String> = [
+            "quotation mark",
+            "single quotation mark",
+            "double quotation mark",
+        ]
+
+        for svg in try target.select("svg").array() {
+            let role = try svg.attr("role").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let ariaHidden = try svg.attr("aria-hidden").lowercased() == "true"
+
+            if role == "presentation" || role == "none" || ariaHidden {
+                try svg.remove()
+                continue
+            }
+
+            let title = try svg.select("title").text().trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard quotationMarkLabels.contains(title),
+                  try nearestAncestor(named: "blockquote", from: svg) != nil,
+                  try nearestAncestor(named: "figure", from: svg) == nil else {
+                continue
+            }
+
+            // Remove the entire glyph so its accessibility metadata cannot become article prose.
+            try svg.remove()
         }
     }
 
